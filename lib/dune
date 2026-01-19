@@ -1,0 +1,4 @@
+(library
+ (name braid)
+ (public_name braid)
+ (libraries yojson bos fmt logs fpath str unix))

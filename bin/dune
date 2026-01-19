@@ -1,0 +1,5 @@
+(executable
+ (name main)
+ (public_name braid)
+ (package braid)
+ (libraries braid cmdliner fmt.tty fmt.cli logs.fmt logs.cli rresult))

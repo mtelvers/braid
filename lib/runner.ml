@@ -336,7 +336,7 @@ let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
       generated_at;
       commits = ["merge-test"];
       packages = [];
-      results = [{ commit = "merge-test"; short_commit = "merge-t"; message = "Merge test snapshot"; packages = [] }];
+      results = [{ commit = "merge-test"; short_commit = "merge-q"; message = "Merge queue snapshot"; packages = [] }];
       mode = "merge-test";
       overlay_repos;
     } in
@@ -374,8 +374,8 @@ let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
 
     let commit_result = {
       commit = "merge-test";
-      short_commit = "merge-t";
-      message = "Merge test snapshot";
+      short_commit = "merge-q";
+      message = "Merge queue snapshot";
       packages = sorted_results;
     } in
 

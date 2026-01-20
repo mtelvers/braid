@@ -106,6 +106,22 @@ braid merge-test /path/to/overlay --dry-run
 
 With `--dry-run`, only stage 1 runs, showing which packages are solvable without building them.
 
+**Querying merge-test results:**
+
+Query commands work with merge-test manifests using `merge-q` as the commit identifier:
+
+```bash
+# Show history for a package
+braid history smtpd.dev -m merge-results/manifest.json
+# Output: First seen: merge-q, Latest status: failure
+
+# Show build log
+braid log merge-q smtpd.dev -m merge-results/manifest.json
+
+# Show dependencies
+braid deps merge-q smtpd.dev -m merge-results/manifest.json
+```
+
 ### Query Commands
 
 All query commands read from a manifest file (default: `manifest.json`). Use `-m PATH` to specify a different manifest.
@@ -298,7 +314,7 @@ The manifest.json file contains all results in a structured format:
 | `os` | Target OS (e.g., "debian-13") |
 | `os_version` | OS version |
 | `generated_at` | ISO 8601 timestamp |
-| `commits` | List of commit hashes (or "merge-test" for merge-test mode) |
+| `commits` | List of commit hashes (or `["merge-test"]` for merge-test mode; short form: "merge-q") |
 | `packages` | List of all package names |
 | `results` | Array of per-commit results |
 | `mode` | "history" for `run` command, "merge-test" for `merge-test` command |

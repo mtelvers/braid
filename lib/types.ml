@@ -68,4 +68,6 @@ type manifest = {
   commits : string list;  (* newest first *)
   packages : string list; (* sorted alphabetically *)
   results : commit_result list;
+  mode : string;  (* "history" for run command, "merge-test" for merge-test command *)
+  overlay_repos : string list;  (* for merge-test: list of stacked repos in priority order *)
 }

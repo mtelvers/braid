@@ -83,6 +83,77 @@ let run_cmd =
                         $ output_dir $ num_commits $ fork_jobs
                         $ os $ os_family $ os_distribution $ os_version))
 
+(* Merge-test subcommand *)
+let merge_test_cmd =
+  let overlay_repos =
+    let doc = "Overlay repository paths (in priority order, first = highest priority)" in
+    Arg.(non_empty & pos_all string [] & info [] ~docv:"REPOS" ~doc)
+  in
+  let opam_repo =
+    let doc = "Path to the main opam repository" in
+    Arg.(value & opt string "/home/mtelvers/opam-repository" & info ["opam-repo"] ~docv:"PATH" ~doc)
+  in
+  let cache_dir =
+    let doc = "Cache directory for day10" in
+    Arg.(value & opt string "/var/cache/day10" & info ["cache-dir"] ~docv:"PATH" ~doc)
+  in
+  let output_dir =
+    let doc = "Output directory for results" in
+    Arg.(value & opt string "results" & info ["o"; "output"] ~docv:"PATH" ~doc)
+  in
+  let fork_jobs =
+    let doc = "Number of parallel jobs for solving" in
+    Arg.(value & opt int 40 & info ["j"; "jobs"] ~docv:"N" ~doc)
+  in
+  let os =
+    let doc = "Operating system" in
+    Arg.(value & opt string "linux" & info ["os"] ~docv:"OS" ~doc)
+  in
+  let os_family =
+    let doc = "OS family" in
+    Arg.(value & opt string "debian" & info ["os-family"] ~docv:"FAMILY" ~doc)
+  in
+  let os_distribution =
+    let doc = "OS distribution" in
+    Arg.(value & opt string "debian" & info ["os-distribution"] ~docv:"DIST" ~doc)
+  in
+  let os_version =
+    let doc = "OS version" in
+    Arg.(value & opt string "13" & info ["os-version"] ~docv:"VERSION" ~doc)
+  in
+  let dry_run =
+    let doc = "Only solve dependencies, don't actually build" in
+    Arg.(value & flag & info ["dry-run"] ~doc)
+  in
+
+  let run _setup overlay_repos opam_repo cache_dir output_dir fork_jobs
+      os os_family os_distribution os_version dry_run =
+    match Runner.merge_test ~overlay_repos ~opam_repo_path:opam_repo ~cache_dir ~output_dir
+            ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~dry_run with
+    | Ok manifest ->
+      let (s, f, d, n, b, e) = Query.summary manifest in
+      Fmt.pr "Merge test: %d overlay repos, %d packages@."
+        (List.length overlay_repos) (List.length manifest.packages);
+      Fmt.pr "Overlay repos (priority order):@.";
+      List.iter (fun r -> Fmt.pr "  %s@." r) overlay_repos;
+      if dry_run then
+        Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
+          s f d n b e
+      else
+        Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
+          s f d n e;
+      `Ok ()
+    | Error e ->
+      Fmt.epr "Error: %a@." Rresult.R.pp_msg e;
+      `Error (false, "merge-test failed")
+  in
+
+  let doc = "Test cumulative effect of merging multiple overlay repositories" in
+  let info = Cmd.info "merge-test" ~doc in
+  Cmd.v info Term.(ret (const run $ setup_log_term $ overlay_repos $ opam_repo $ cache_dir
+                        $ output_dir $ fork_jobs
+                        $ os $ os_family $ os_distribution $ os_version $ dry_run))
+
 (* Query: failures *)
 let failures_cmd =
   let run _setup manifest_file =
@@ -294,6 +365,7 @@ let main_cmd =
   let default = Term.(ret (const (`Help (`Pager, None)))) in
   Cmd.group info ~default [
     run_cmd;
+    merge_test_cmd;
     failures_cmd;
     log_cmd;
     history_cmd;

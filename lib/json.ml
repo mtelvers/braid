@@ -78,6 +78,8 @@ let manifest_to_json m =
     "commits", `List (List.map (fun c -> `String c) m.commits);
     "packages", `List (List.map (fun p -> `String p) m.packages);
     "results", `List (List.map commit_result_to_json m.results);
+    "mode", `String m.mode;
+    "overlay_repos", `List (List.map (fun r -> `String r) m.overlay_repos);
   ]
 
 let manifest_of_json json =
@@ -90,7 +92,16 @@ let manifest_of_json json =
   let commits = json |> member "commits" |> to_list |> List.map to_string in
   let packages = json |> member "packages" |> to_list |> List.map to_string in
   let results = json |> member "results" |> to_list |> List.map commit_result_of_json in
-  { repo_path; opam_repo_path; os; os_version; generated_at; commits; packages; results }
+  (* For backwards compatibility, default mode to "history" and overlay_repos to [] *)
+  let mode = match json |> member "mode" with
+    | `Null -> "history"
+    | j -> to_string j
+  in
+  let overlay_repos = match json |> member "overlay_repos" with
+    | `Null -> []
+    | j -> to_list j |> List.map to_string
+  in
+  { repo_path; opam_repo_path; os; os_version; generated_at; commits; packages; results; mode; overlay_repos }
 
 (** Parse a day10 JSON result file *)
 let parse_day10_result json =

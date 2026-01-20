@@ -60,6 +60,52 @@ braid run <REPO_PATH> [OPTIONS]
 braid run /home/mtelvers/aoah-opam-repo -n 57 -o results -v
 ```
 
+### Merge Testing
+
+Test the cumulative effect of merging multiple overlay repositories without tracking commit history.
+
+```bash
+braid merge-test <REPOS>... [OPTIONS]
+```
+
+**Arguments:**
+- `REPOS` - One or more overlay repository paths (in priority order, first = highest priority)
+
+**Options:**
+- `-j, --jobs N` - Number of parallel jobs for solving (default: 40)
+- `-o, --output PATH` - Output directory for results (default: results)
+- `--opam-repo PATH` - Path to the main opam repository (default: /home/mtelvers/opam-repository)
+- `--cache-dir PATH` - Cache directory for day10 (default: /var/cache/day10)
+- `--dry-run` - Only solve dependencies, don't actually build
+- `--os OS` - Operating system (default: linux)
+- `--os-family FAMILY` - OS family (default: debian)
+- `--os-distribution DIST` - OS distribution (default: debian)
+- `--os-version VERSION` - OS version (default: 13)
+- `-v, --verbose` - Increase verbosity
+
+**Examples:**
+```bash
+# Test a single overlay repository
+braid merge-test /home/mtelvers/my-overlay -o results
+
+# Test what happens if 'experimental' is merged into 'stable'
+braid merge-test /path/to/experimental /path/to/stable -o merge-results
+
+# Stack multiple overlays (first has highest priority)
+braid merge-test /path/to/repo1 /path/to/repo2 /path/to/repo3
+
+# Quick dependency check without building
+braid merge-test /path/to/overlay --dry-run
+```
+
+**How it works:**
+
+1. Lists packages from all overlay repositories (not from opam-repository)
+2. **Stage 1:** Runs `day10 health-check --dry-run --fork N` for fast parallel dependency solving
+3. **Stage 2:** For packages that returned "solution" (solvable but not built), runs `day10 health-check` without `--dry-run` to actually build them
+
+With `--dry-run`, only stage 1 runs, showing which packages are solvable without building them.
+
 ### Query Commands
 
 All query commands read from a manifest file (default: `manifest.json`). Use `-m PATH` to specify a different manifest.
@@ -237,8 +283,26 @@ The manifest.json file contains all results in a structured format:
       ]
     },
     ...
-  ]
+  ],
+  "mode": "history",
+  "overlay_repos": []
 }
+```
+
+### Manifest Fields
+
+| Field | Description |
+|-------|-------------|
+| `repo_path` | Primary overlay repository path |
+| `opam_repo_path` | Main opam-repository path |
+| `os` | Target OS (e.g., "debian-13") |
+| `os_version` | OS version |
+| `generated_at` | ISO 8601 timestamp |
+| `commits` | List of commit hashes (or "merge-test" for merge-test mode) |
+| `packages` | List of all package names |
+| `results` | Array of per-commit results |
+| `mode` | "history" for `run` command, "merge-test" for `merge-test` command |
+| `overlay_repos` | For merge-test: list of stacked repos in priority order (first = highest) |
 ```
 
 ### Status Values

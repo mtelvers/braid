@@ -390,6 +390,135 @@ for result in manifest['results']:
 print(f"Packages that have failed: {failed_packages}")
 ```
 
+## Tutorial: Merge Testing Workflow
+
+This tutorial demonstrates using `braid merge-test` to validate overlay repositories before merging.
+
+### 1. Create a Test Overlay Repository
+
+Create an opam repository structure with packages to test:
+
+```bash
+mkdir -p ~/claude-repo/packages/mypackage/mypackage.dev
+```
+
+Create the `repo` file:
+```bash
+echo 'opam-version: "2.0"' > ~/claude-repo/repo
+```
+
+For each package, create an opam file at `packages/<name>/<name>.dev/opam`:
+
+```
+opam-version: "2.0"
+synopsis: "My package"
+depends: [
+  "ocaml" {>= "5.0"}
+  "dune" {>= "3.0"}
+]
+build: [
+  ["dune" "build" "-p" name "-j" jobs]
+]
+url {
+  src: "git+https://github.com/user/repo.git"
+}
+```
+
+### 2. Run Initial Merge Test
+
+Test the overlay with a quick dry-run first:
+
+```bash
+braid merge-test ~/claude-repo --dry-run -o results
+```
+
+This shows which packages are solvable without building. The output includes a "solution" count for packages that can be built.
+
+### 3. Run Full Build Test
+
+Run the actual build:
+
+```bash
+braid merge-test ~/claude-repo -o results
+```
+
+Example output:
+```
+Merge test: 1 overlay repos, 3 packages
+Overlay repos (priority order):
+  /home/user/claude-repo
+Results: 1 success, 2 failure, 0 dep_failed, 0 no_solution, 0 error
+```
+
+### 4. Diagnose Failures
+
+Check which packages failed:
+
+```bash
+braid failures -m results/manifest.json
+```
+
+View the build log for a failing package:
+
+```bash
+braid log merge-q smtpd.dev -m results/manifest.json
+```
+
+Example output showing a missing dependency:
+```
+pam_stubs.c:7:10: fatal error: security/pam_appl.h: No such file or directory
+    7 | #include <security/pam_appl.h>
+      |          ^~~~~~~~~~~~~~~~~~~~~
+```
+
+### 5. Fix and Retest
+
+In this case, the package needs `conf-pam` as a build dependency. Update the opam file:
+
+```
+depends: [
+  "ocaml" {>= "5.0"}
+  "dune" {>= "3.0"}
+  "conf-pam" {build}   # Added for PAM headers
+  ...
+]
+```
+
+Rerun the merge test:
+
+```bash
+braid merge-test ~/claude-repo -o results
+```
+
+```
+Results: 3 success, 0 failure, 0 dep_failed, 0 no_solution, 0 error
+```
+
+### 6. Test Multiple Stacked Overlays
+
+Test what happens when merging multiple overlays together:
+
+```bash
+braid merge-test ~/my-overlay ~/upstream-overlay -o merge-results
+```
+
+Overlays are listed in priority order (first = highest priority, "on top"). This tests the combined effect of merging all overlays.
+
+### 7. Query Results
+
+After testing, query the manifest for details:
+
+```bash
+# Package history
+braid history smtpd.dev -m results/manifest.json
+
+# Dependency graph
+braid deps merge-q smtpd.dev -m results/manifest.json
+
+# Full JSON result
+braid result merge-q smtpd.dev -m results/manifest.json
+```
+
 ## Dependencies
 
 - OCaml >= 4.14

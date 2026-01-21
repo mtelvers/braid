@@ -13,8 +13,8 @@ let clone_repo ~temp_dir url =
       base
   in
   let repo_path = Filename.concat temp_dir repo_name in
-  let cmd = ["git"; "clone"; "--depth"; "100"; url; repo_path] in
-  let cmd_str = String.concat " " cmd in
+  (* GIT_TERMINAL_PROMPT=0 prevents git from prompting for credentials *)
+  let cmd_str = Printf.sprintf "GIT_TERMINAL_PROMPT=0 git clone --depth 100 %s %s" url repo_path in
   match Unix.system cmd_str with
   | Unix.WEXITED 0 -> Ok repo_path
   | _ -> Error (`Msg (Printf.sprintf "Failed to clone %s" url))

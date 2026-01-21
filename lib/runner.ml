@@ -7,6 +7,7 @@ let ( let* ) = Result.bind
 (** Run a command and return stdout *)
 let run_cmd args =
   let cmd = Bos.Cmd.of_list args in
+  Logs.info (fun m -> m "Executing: %a" Bos.Cmd.pp cmd);
   Bos.OS.Cmd.run_out cmd |> Bos.OS.Cmd.out_string
 
 (** Run a command, ignoring output *)

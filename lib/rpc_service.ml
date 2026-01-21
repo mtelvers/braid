@@ -19,6 +19,13 @@ let clone_repo ~temp_dir url =
   | Unix.WEXITED 0 -> Ok repo_path
   | _ -> Error (`Msg (Printf.sprintf "Failed to clone %s" url))
 
+(** Create a unique temp directory using mktemp *)
+let make_temp_dir () =
+  let ic = Unix.open_process_in "mktemp -d -t braid.XXXXXX" in
+  let temp_dir = input_line ic in
+  let _ = Unix.close_process_in ic in
+  temp_dir
+
 (** Create the local BraidService implementation *)
 let local ~opam_repo_path ~cache_dir =
   let module Service = Api.Service.BraidService in
@@ -36,10 +43,8 @@ let local ~opam_repo_path ~cache_dir =
       let os_distribution = Params.os_distribution_get params in
       let os_version = Params.os_version_get params in
 
-      (* Create temp directory for cloned repo *)
-      let temp_dir = Filename.concat (Filename.get_temp_dir_name ())
-                       (Printf.sprintf "braid-%d" (Unix.getpid ())) in
-      (try Unix.mkdir temp_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+      (* Create unique temp directory for each request *)
+      let temp_dir = make_temp_dir () in
 
       let result =
         match clone_repo ~temp_dir repo_url with
@@ -76,10 +81,8 @@ let local ~opam_repo_path ~cache_dir =
       let os_distribution = Params.os_distribution_get params in
       let os_version = Params.os_version_get params in
 
-      (* Create temp directory for cloned repos *)
-      let temp_dir = Filename.concat (Filename.get_temp_dir_name ())
-                       (Printf.sprintf "braid-%d" (Unix.getpid ())) in
-      (try Unix.mkdir temp_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+      (* Create unique temp directory for each request *)
+      let temp_dir = make_temp_dir () in
 
       let result =
         (* Clone all repos *)

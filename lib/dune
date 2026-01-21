@@ -1,4 +1,10 @@
 (library
  (name braid)
  (public_name braid)
- (libraries yojson bos fmt logs fpath str unix))
+ (libraries yojson bos fmt logs fpath str unix
+            capnp capnp-rpc capnp-rpc-unix eio eio_main))
+
+(rule
+ (targets rpc_schema.ml rpc_schema.mli)
+ (deps rpc_schema.capnp)
+ (action (run capnp compile -o %{bin:capnpc-ocaml} %{deps})))

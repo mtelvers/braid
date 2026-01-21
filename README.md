@@ -519,6 +519,139 @@ braid deps merge-q smtpd.dev -m results/manifest.json
 braid result merge-q smtpd.dev -m results/manifest.json
 ```
 
+## Tutorial: Remote Execution via RPC
+
+Braid supports remote execution using Cap'n Proto RPC. This allows you to run health checks on a remote server that has day10 and opam-repository available, from a client that only needs the braid binary and a capability file.
+
+### Use Cases
+
+- **Dev containers**: Run builds from lightweight development environments without day10 or opam-repository
+- **Centralised build server**: Share a single build server across multiple developers
+- **CI/CD integration**: Submit builds from CI pipelines to a dedicated build infrastructure
+
+### 1. Start the Server
+
+On a machine with day10 and opam-repository:
+
+```bash
+braid server --port 5000 \
+  --public-addr build.example.com \
+  --key-file /var/lib/braid/server.key \
+  --cap-file /var/lib/braid/braid.cap \
+  --opam-repo /home/user/opam-repository \
+  --cache-dir /var/cache/day10
+```
+
+**Server options:**
+- `--port PORT` - Port to listen on (required)
+- `--public-addr HOST` - Public hostname for the capability URI (required)
+- `--key-file PATH` - Path to store/load the server's secret key (default: server.key)
+- `--cap-file PATH` - Path to write the capability file (default: braid.cap)
+- `--opam-repo PATH` - Path to opam-repository
+- `--cache-dir PATH` - Cache directory for day10
+
+The `--key-file` option ensures the capability URI remains stable across server restarts. Without it, clients would need a new capability file each time the server restarts.
+
+### 2. Distribute the Capability File
+
+Copy the capability file to any client machine:
+
+```bash
+scp build.example.com:/var/lib/braid/braid.cap ~/.config/braid.cap
+```
+
+The capability file contains a URI like:
+```
+capnp://sha-256:abc123...@build.example.com:5000/def456...
+```
+
+This URI encodes both the server address and a cryptographic capability token.
+
+### 3. Run Remote Merge Tests
+
+From the client, use `--connect` with a repository URL (not a local path):
+
+```bash
+braid merge-test https://github.com/user/overlay-repo \
+  --connect ~/.config/braid.cap \
+  -o results
+```
+
+The server will:
+1. Clone the repository to a temporary directory
+2. Run day10 health checks
+3. Return the manifest JSON
+4. Clean up the temporary directory
+
+Example output:
+```
+Merge test: 1 overlay repos, 4 packages (remote)
+Overlay repos (priority order):
+  https://github.com/user/overlay-repo
+Results: 4 success, 0 failure, 0 dep_failed, 0 no_solution, 0 error
+```
+
+### 4. Run Remote History Checks
+
+The `run` command also supports remote execution:
+
+```bash
+braid run https://github.com/user/overlay-repo \
+  --connect ~/.config/braid.cap \
+  -n 10 \
+  -o results
+```
+
+### 5. Query Results Locally
+
+Once the manifest is downloaded, all query commands work locally:
+
+```bash
+braid summary -m results/manifest.json
+braid failures -m results/manifest.json
+braid log merge-q mypackage.dev -m results/manifest.json
+```
+
+### Important Notes for RPC Usage
+
+1. **Repository URLs**: When using `--connect`, pass git URLs instead of local paths. The server clones the repository.
+
+2. **Opam file requirements**: Packages in the overlay repository must have a `url` section in their opam files:
+   ```
+   url {
+     src: "git+https://github.com/user/package-repo.git"
+   }
+   ```
+   This tells day10 where to fetch the package source.
+
+3. **Network requirements**: The server must be able to clone repositories from the URLs you provide.
+
+4. **Capability security**: The capability file grants full access to the braid server. Treat it like a password.
+
+### Example: Complete Workflow
+
+```bash
+# On the server (once)
+braid server --port 5000 \
+  --public-addr basil.caelum.ci.dev \
+  --key-file ~/braid-server.key \
+  --cap-file ~/braid.cap \
+  --opam-repo ~/opam-repository \
+  --cache-dir /var/cache/day10
+
+# Distribute capability (once)
+scp basil.caelum.ci.dev:~/braid.cap ~/.config/
+
+# From any client - test an overlay
+braid merge-test https://github.com/mtelvers/claude-repo \
+  --connect ~/.config/braid.cap \
+  -o /tmp/results
+
+# Check results
+braid summary -m /tmp/results/manifest.json
+braid failures -m /tmp/results/manifest.json
+```
+
 ## Dependencies
 
 - OCaml >= 4.14
@@ -528,7 +661,9 @@ braid result merge-q smtpd.dev -m results/manifest.json
 - fmt >= 0.9
 - logs >= 0.7
 - fpath >= 0.7
-- [day10](https://github.com/mtelvers/day10) (must be in PATH)
+- capnp-rpc = 2.1 (for RPC support)
+- eio >= 1.2 (for RPC support)
+- [day10](https://github.com/mtelvers/day10) (must be in PATH on server)
 
 ## License
 

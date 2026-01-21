@@ -216,6 +216,10 @@ let server_cmd =
     let doc = "Port to listen on" in
     Arg.(required & opt (some int) None & info ["port"] ~docv:"PORT" ~doc)
   in
+  let public_addr_arg =
+    let doc = "Public hostname/IP for capability URI (what clients use to connect)" in
+    Arg.(required & opt (some string) None & info ["public-addr"] ~docv:"HOST" ~doc)
+  in
   let key_file_arg =
     let doc = "Path to secret key file (created if doesn't exist)" in
     Arg.(value & opt string "braid.key" & info ["key-file"] ~docv:"FILE" ~doc)
@@ -237,19 +241,19 @@ let server_cmd =
     Arg.(value & opt string "/var/cache/day10" & info ["cache-dir"] ~docv:"PATH" ~doc)
   in
 
-  let server _setup port key_file cap_file listen_addr opam_repo cache_dir =
+  let server _setup port public_addr key_file cap_file listen_addr opam_repo cache_dir =
     Eio_main.run @@ fun env ->
       Eio.Switch.run @@ fun sw ->
         let net = Eio.Stdenv.net env in
         let fs = Eio.Stdenv.cwd env in
-        Server.run ~sw ~net ~fs ~listen_addr ~listen_port:port ~key_file ~cap_file
-          ~opam_repo_path:opam_repo ~cache_dir
+        Server.run ~sw ~net ~fs ~listen_addr ~listen_port:port ~public_addr
+          ~key_file ~cap_file ~opam_repo_path:opam_repo ~cache_dir
   in
 
   let doc = "Start RPC server for remote braid execution" in
   let info = Cmd.info "server" ~doc in
-  Cmd.v info Term.(const server $ setup_log_term $ port_arg $ key_file_arg $ cap_file_arg
-                   $ listen_addr_arg $ opam_repo $ cache_dir)
+  Cmd.v info Term.(const server $ setup_log_term $ port_arg $ public_addr_arg
+                   $ key_file_arg $ cap_file_arg $ listen_addr_arg $ opam_repo $ cache_dir)
 
 (* Query: failures *)
 let failures_cmd =

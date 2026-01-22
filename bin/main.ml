@@ -76,17 +76,23 @@ let run_cmd =
               ~repo_url:repo_path ~num_commits ~fork_jobs
               ~os ~os_family ~os_distribution ~os_version in
           let json = Yojson.Basic.from_string manifest_json in
-          let manifest = Json.manifest_of_json json in
-          (* Write manifest to output directory *)
-          (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
-          let manifest_path = Filename.concat output_dir "manifest.json" in
-          let _ = Json.write_manifest manifest_path manifest in
-          let (s, f, d, n, b, e) = Query.summary manifest in
-          Fmt.pr "Processed %d commits, %d packages (remote)@."
-            (List.length manifest.commits) (List.length manifest.packages);
-          Fmt.pr "Latest: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
-            s f d n b e;
-          `Ok ()
+          (* Check for error response *)
+          (match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
+          | Some err_msg ->
+            Fmt.epr "Remote error: %s@." err_msg;
+            `Error (false, "remote run failed")
+          | None ->
+            let manifest = Json.manifest_of_json json in
+            (* Write manifest to output directory *)
+            (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+            let manifest_path = Filename.concat output_dir "manifest.json" in
+            let _ = Json.write_manifest manifest_path manifest in
+            let (s, f, d, n, b, e) = Query.summary manifest in
+            Fmt.pr "Processed %d commits, %d packages (remote)@."
+              (List.length manifest.commits) (List.length manifest.packages);
+            Fmt.pr "Latest: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
+              s f d n b e;
+            `Ok ())
     | None ->
       (* Local execution *)
       match Runner.run ~repo_path ~opam_repo_path:opam_repo ~cache_dir ~output_dir
@@ -161,19 +167,25 @@ let merge_test_cmd =
               ~repo_urls:overlay_repos ~fork_jobs
               ~os ~os_family ~os_distribution ~os_version in
           let json = Yojson.Basic.from_string manifest_json in
-          let manifest = Json.manifest_of_json json in
-          (* Write manifest to output directory *)
-          (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
-          let manifest_path = Filename.concat output_dir "manifest.json" in
-          let _ = Json.write_manifest manifest_path manifest in
-          let (s, f, d, n, _b, e) = Query.summary manifest in
-          Fmt.pr "Merge test: %d overlay repos, %d packages (remote)@."
-            (List.length overlay_repos) (List.length manifest.packages);
-          Fmt.pr "Overlay repos (priority order):@.";
-          List.iter (fun r -> Fmt.pr "  %s@." r) overlay_repos;
-          Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
-            s f d n e;
-          `Ok ()
+          (* Check for error response *)
+          (match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
+          | Some err_msg ->
+            Fmt.epr "Remote error: %s@." err_msg;
+            `Error (false, "remote merge-test failed")
+          | None ->
+            let manifest = Json.manifest_of_json json in
+            (* Write manifest to output directory *)
+            (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+            let manifest_path = Filename.concat output_dir "manifest.json" in
+            let _ = Json.write_manifest manifest_path manifest in
+            let (s, f, d, n, _b, e) = Query.summary manifest in
+            Fmt.pr "Merge test: %d overlay repos, %d packages (remote)@."
+              (List.length overlay_repos) (List.length manifest.packages);
+            Fmt.pr "Overlay repos (priority order):@.";
+            List.iter (fun r -> Fmt.pr "  %s@." r) overlay_repos;
+            Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
+              s f d n e;
+            `Ok ())
     | None ->
       (* Local execution *)
       match Runner.merge_test ~overlay_repos ~opam_repo_path:opam_repo ~cache_dir ~output_dir

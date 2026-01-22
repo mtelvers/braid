@@ -26,6 +26,14 @@ let make_temp_dir () =
   let _ = Unix.close_process_in ic in
   temp_dir
 
+(** Get current working directory *)
+let get_cwd () =
+  Unix.getcwd ()
+
+(** Restore working directory *)
+let restore_cwd cwd =
+  try Unix.chdir cwd with _ -> ()
+
 (** Create the local BraidService implementation *)
 let local ~opam_repo_path ~cache_dir =
   let module Service = Api.Service.BraidService in
@@ -42,6 +50,9 @@ let local ~opam_repo_path ~cache_dir =
       let os_family = Params.os_family_get params in
       let os_distribution = Params.os_distribution_get params in
       let os_version = Params.os_version_get params in
+
+      (* Save current working directory - Runner.run changes it *)
+      let saved_cwd = get_cwd () in
 
       (* Create unique temp directory for each request *)
       let temp_dir = make_temp_dir () in
@@ -61,6 +72,9 @@ let local ~opam_repo_path ~cache_dir =
           | Error (`Msg msg) -> Error msg
       in
 
+      (* Restore working directory before cleanup *)
+      restore_cwd saved_cwd;
+
       (* Clean up temp directory *)
       let _ = Unix.system (Printf.sprintf "rm -rf %s" temp_dir) in
 
@@ -79,6 +93,9 @@ let local ~opam_repo_path ~cache_dir =
       let os_family = Params.os_family_get params in
       let os_distribution = Params.os_distribution_get params in
       let os_version = Params.os_version_get params in
+
+      (* Save current working directory *)
+      let saved_cwd = get_cwd () in
 
       (* Create unique temp directory for each request *)
       let temp_dir = make_temp_dir () in
@@ -105,6 +122,9 @@ let local ~opam_repo_path ~cache_dir =
             Ok (Yojson.Basic.to_string json)
           | Error (`Msg msg) -> Error msg
       in
+
+      (* Restore working directory before cleanup *)
+      restore_cwd saved_cwd;
 
       (* Clean up temp directory *)
       let _ = Unix.system (Printf.sprintf "rm -rf %s" temp_dir) in

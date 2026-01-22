@@ -22,7 +22,9 @@ let run_remote ~sw ~net ~cap_file ~repo_url ~num_commits ~fork_jobs
   Params.os_distribution_set params os_distribution;
   Params.os_version_set params os_version;
   let response = Capnp_rpc.Capability.call_for_value_exn service method_id request in
-  Results.manifest_json_get response
+  let result = Results.manifest_json_get response in
+  Capnp_rpc.Capability.dec_ref service;
+  result
 
 (** Run merge test on a remote server *)
 let merge_test_remote ~sw ~net ~cap_file ~repo_urls ~fork_jobs
@@ -37,4 +39,6 @@ let merge_test_remote ~sw ~net ~cap_file ~repo_urls ~fork_jobs
   Params.os_distribution_set params os_distribution;
   Params.os_version_set params os_version;
   let response = Capnp_rpc.Capability.call_for_value_exn service method_id request in
-  Results.manifest_json_get response
+  let result = Results.manifest_json_get response in
+  Capnp_rpc.Capability.dec_ref service;
+  result

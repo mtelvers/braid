@@ -55,35 +55,8 @@ let checkout commit =
   let args = ["git"; "checkout"; "-q"; commit] in
   run_cmd_quiet args
 
-(** Run day10 health-check with --dry-run and --json *)
-let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~output_dir ~packages =
-  (* Create packages JSON file *)
-  let packages_file = Filename.concat output_dir "packages.json" in
-  let packages_json = Printf.sprintf {|{"packages":[%s]}|}
-    (String.concat "," (List.map (Printf.sprintf {|"%s"|}) packages))
-  in
-  let* () = Bos.OS.File.write (Fpath.v packages_file) packages_json in
-
-  let results_dir = Filename.concat output_dir "results" in
-  let* _ = Bos.OS.Dir.create (Fpath.v results_dir) in
-
-  let args = [
-    "day10"; "health-check";
-    "--opam-repository"; repo_path;
-    "--opam-repository"; opam_repo_path;
-    "--cache-dir"; cache_dir;
-    "--os"; os;
-    "--os-family"; os_family;
-    "--os-distribution"; os_distribution;
-    "--os-version"; os_version;
-    "--dry-run";
-    "--fork"; string_of_int fork_jobs;
-    "--json"; results_dir;
-    "@" ^ packages_file;
-  ] in
-  let* _ = run_cmd args in
-
-  (* Parse result files *)
+(** Parse results from a results directory *)
+let parse_results results_dir =
   let* entries = Bos.OS.Dir.contents (Fpath.v results_dir) in
   let results = List.filter_map (fun path ->
     if Fpath.has_ext "json" path then
@@ -97,6 +70,76 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
     else None
   ) entries in
   Ok results
+
+(** Run day10 health-check with two-stage approach (solve then build) *)
+let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~output_dir ~packages =
+  (* Create packages JSON file *)
+  let packages_file = Filename.concat output_dir "packages.json" in
+  let packages_json = Printf.sprintf {|{"packages":[%s]}|}
+    (String.concat "," (List.map (Printf.sprintf {|"%s"|}) packages))
+  in
+  let* () = Bos.OS.File.write (Fpath.v packages_file) packages_json in
+
+  let results_dir = Filename.concat output_dir "results" in
+  let* _ = Bos.OS.Dir.create (Fpath.v results_dir) in
+
+  (* Stage 1: dry-run with high parallelism to solve dependencies *)
+  let args_stage1 = [
+    "day10"; "health-check";
+    "--opam-repository"; repo_path;
+    "--opam-repository"; opam_repo_path;
+    "--cache-dir"; cache_dir;
+    "--os"; os;
+    "--os-family"; os_family;
+    "--os-distribution"; os_distribution;
+    "--os-version"; os_version;
+    "--dry-run";
+    "--fork"; string_of_int fork_jobs;
+    "--json"; results_dir;
+    "@" ^ packages_file;
+  ] in
+  let* _ = run_cmd args_stage1 in
+
+  (* Parse stage 1 results *)
+  let* results_stage1 = parse_results results_dir in
+
+  (* Stage 2: find packages with status "solution" and actually build them *)
+  let solution_packages = results_stage1
+    |> List.filter (fun r -> r.status = Solution)
+    |> List.map (fun r -> r.name)
+  in
+
+  if solution_packages = [] then
+    (* No packages need building *)
+    Ok results_stage1
+  else begin
+    Logs.info (fun m -> m "Stage 2: building %d packages" (List.length solution_packages));
+
+    (* Create packages file for stage 2 *)
+    let packages_file2 = Filename.concat output_dir "packages_stage2.json" in
+    let packages_json2 = Printf.sprintf {|{"packages":[%s]}|}
+      (String.concat "," (List.map (Printf.sprintf {|"%s"|}) solution_packages))
+    in
+    let* () = Bos.OS.File.write (Fpath.v packages_file2) packages_json2 in
+
+    (* Stage 2: no --dry-run, no --fork (sequential builds) *)
+    let args_stage2 = [
+      "day10"; "health-check";
+      "--opam-repository"; repo_path;
+      "--opam-repository"; opam_repo_path;
+      "--cache-dir"; cache_dir;
+      "--os"; os;
+      "--os-family"; os_family;
+      "--os-distribution"; os_distribution;
+      "--os-version"; os_version;
+      "--json"; results_dir;
+      "@" ^ packages_file2;
+    ] in
+    let* _ = run_cmd args_stage2 in
+
+    (* Parse final results (stage 2 overwrites stage 1 results for built packages) *)
+    parse_results results_dir
+  end
 
 (** Process a single commit *)
 let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~temp_dir commit =
@@ -215,24 +258,8 @@ let list_packages_multi ~repo_paths ~os ~os_family ~os_distribution ~os_version 
   in
   Ok packages
 
-(** Parse results from a directory of JSON files *)
-let parse_results_dir results_dir =
-  let* entries = Bos.OS.Dir.contents (Fpath.v results_dir) in
-  let results = List.filter_map (fun path ->
-    if Fpath.has_ext "json" path then
-      match Bos.OS.File.read path with
-      | Ok content ->
-        (try
-          let json = Yojson.Basic.from_string content in
-          Some (Json.parse_day10_result json)
-        with _ -> None)
-      | Error _ -> None
-    else None
-  ) entries in
-  Ok results
-
 (** Run day10 health-check with multiple overlay repos (two-stage: solve then build) *)
-let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~dry_run ~output_dir ~packages =
+let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~output_dir ~packages =
   (* Create packages JSON file *)
   let packages_file = Filename.concat output_dir "packages.json" in
   let packages_json = Printf.sprintf {|{"packages":[%s]}|}
@@ -266,54 +293,49 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
   let* _ = run_cmd args_stage1 in
 
   (* Parse stage 1 results *)
-  let* results_stage1 = parse_results_dir results_dir in
+  let* results_stage1 = parse_results results_dir in
 
-  if dry_run then
-    (* If --dry-run, we're done after stage 1 *)
+  (* Stage 2: find packages with status "solution" and actually build them *)
+  let solution_packages = results_stage1
+    |> List.filter (fun r -> r.status = Solution)
+    |> List.map (fun r -> r.name)
+  in
+
+  if solution_packages = [] then
+    (* No packages need building *)
     Ok results_stage1
   else begin
-    (* Stage 2: find packages with status "solution" and actually build them *)
-    let solution_packages = results_stage1
-      |> List.filter (fun r -> r.status = Solution)
-      |> List.map (fun r -> r.name)
+    Logs.info (fun m -> m "Stage 2: building %d packages" (List.length solution_packages));
+
+    (* Create packages file for stage 2 *)
+    let packages_file2 = Filename.concat output_dir "packages_stage2.json" in
+    let packages_json2 = Printf.sprintf {|{"packages":[%s]}|}
+      (String.concat "," (List.map (Printf.sprintf {|"%s"|}) solution_packages))
     in
+    let* () = Bos.OS.File.write (Fpath.v packages_file2) packages_json2 in
 
-    if solution_packages = [] then
-      (* No packages need building *)
-      Ok results_stage1
-    else begin
-      Logs.info (fun m -> m "Stage 2: building %d packages" (List.length solution_packages));
+    (* Stage 2: no --dry-run, no --fork (sequential builds) *)
+    let args_stage2 = [
+      "day10"; "health-check";
+    ] @ repo_args @ [
+      "--opam-repository"; opam_repo_path;
+      "--cache-dir"; cache_dir;
+      "--os"; os;
+      "--os-family"; os_family;
+      "--os-distribution"; os_distribution;
+      "--os-version"; os_version;
+      "--json"; results_dir;
+      "@" ^ packages_file2;
+    ] in
+    let* _ = run_cmd args_stage2 in
 
-      (* Create packages file for stage 2 *)
-      let packages_file2 = Filename.concat output_dir "packages_stage2.json" in
-      let packages_json2 = Printf.sprintf {|{"packages":[%s]}|}
-        (String.concat "," (List.map (Printf.sprintf {|"%s"|}) solution_packages))
-      in
-      let* () = Bos.OS.File.write (Fpath.v packages_file2) packages_json2 in
-
-      (* Stage 2: no --dry-run, no --fork (sequential builds) *)
-      let args_stage2 = [
-        "day10"; "health-check";
-      ] @ repo_args @ [
-        "--opam-repository"; opam_repo_path;
-        "--cache-dir"; cache_dir;
-        "--os"; os;
-        "--os-family"; os_family;
-        "--os-distribution"; os_distribution;
-        "--os-version"; os_version;
-        "--json"; results_dir;
-        "@" ^ packages_file2;
-      ] in
-      let* _ = run_cmd args_stage2 in
-
-      (* Parse final results (stage 2 overwrites stage 1 results for built packages) *)
-      parse_results_dir results_dir
-    end
+    (* Parse final results (stage 2 overwrites stage 1 results for built packages) *)
+    parse_results results_dir
   end
 
 (** Run merge test on stacked repositories *)
 let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-    ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~dry_run =
+    ~os ~os_family ~os_distribution ~os_version ~fork_jobs =
 
   (* List packages from overlay repos only (not opam-repository) *)
   let* packages = list_packages_multi ~repo_paths:overlay_repos ~os ~os_family ~os_distribution ~os_version in
@@ -353,7 +375,7 @@ let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
     let* results = health_check_multi
       ~overlay_repos ~opam_repo_path ~cache_dir
       ~os ~os_family ~os_distribution ~os_version
-      ~fork_jobs ~dry_run ~output_dir ~packages
+      ~fork_jobs ~output_dir ~packages
     in
 
     (* Sort results by package name *)

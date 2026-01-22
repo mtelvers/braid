@@ -25,13 +25,12 @@ let run_remote ~sw ~net ~cap_file ~repo_url ~num_commits ~fork_jobs
   Results.manifest_json_get response
 
 (** Run merge test on a remote server *)
-let merge_test_remote ~sw ~net ~cap_file ~repo_urls ~dry_run ~fork_jobs
+let merge_test_remote ~sw ~net ~cap_file ~repo_urls ~fork_jobs
     ~os ~os_family ~os_distribution ~os_version =
   let service = connect ~sw ~net cap_file in
   let open Api.Client.BraidService.MergeTest in
   let request, params = Capnp_rpc.Capability.Request.create Params.init_pointer in
   let _ = Params.repo_urls_set_list params repo_urls in
-  Params.dry_run_set params dry_run;
   Params.fork_jobs_set params (Stdint.Uint32.of_int fork_jobs);
   Params.os_set params os;
   Params.os_family_set params os_family;

@@ -74,7 +74,6 @@ let local ~opam_repo_path ~cache_dir =
       let open Service.MergeTest in
       release_param_caps ();
       let repo_urls = Params.repo_urls_get_list params in
-      let dry_run = Params.dry_run_get params in
       let fork_jobs = Params.fork_jobs_get params |> Stdint.Uint32.to_int in
       let os = Params.os_get params in
       let os_family = Params.os_family_get params in
@@ -100,7 +99,7 @@ let local ~opam_repo_path ~cache_dir =
           let output_dir = Filename.concat temp_dir "results" in
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-                  ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~dry_run with
+                  ~os ~os_family ~os_distribution ~os_version ~fork_jobs with
           | Ok manifest ->
             let json = Json.manifest_to_json manifest in
             Ok (Yojson.Basic.to_string json)

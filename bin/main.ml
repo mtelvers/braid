@@ -148,13 +148,9 @@ let merge_test_cmd =
     let doc = "OS version" in
     Arg.(value & opt string "13" & info ["os-version"] ~docv:"VERSION" ~doc)
   in
-  let dry_run =
-    let doc = "Only solve dependencies, don't actually build" in
-    Arg.(value & flag & info ["dry-run"] ~doc)
-  in
 
   let run _setup overlay_repos opam_repo cache_dir output_dir fork_jobs
-      os os_family os_distribution os_version dry_run connect =
+      os os_family os_distribution os_version connect =
     match connect with
     | Some cap_file ->
       (* Remote execution via RPC *)
@@ -162,7 +158,7 @@ let merge_test_cmd =
         Eio.Switch.run @@ fun sw ->
           let net = Eio.Stdenv.net env in
           let manifest_json = Rpc_client.merge_test_remote ~sw ~net ~cap_file
-              ~repo_urls:overlay_repos ~dry_run ~fork_jobs
+              ~repo_urls:overlay_repos ~fork_jobs
               ~os ~os_family ~os_distribution ~os_version in
           let json = Yojson.Basic.from_string manifest_json in
           let manifest = Json.manifest_of_json json in
@@ -170,34 +166,26 @@ let merge_test_cmd =
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           let manifest_path = Filename.concat output_dir "manifest.json" in
           let _ = Json.write_manifest manifest_path manifest in
-          let (s, f, d, n, b, e) = Query.summary manifest in
+          let (s, f, d, n, _b, e) = Query.summary manifest in
           Fmt.pr "Merge test: %d overlay repos, %d packages (remote)@."
             (List.length overlay_repos) (List.length manifest.packages);
           Fmt.pr "Overlay repos (priority order):@.";
           List.iter (fun r -> Fmt.pr "  %s@." r) overlay_repos;
-          if dry_run then
-            Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
-              s f d n b e
-          else
-            Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
-              s f d n e;
+          Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
+            s f d n e;
           `Ok ()
     | None ->
       (* Local execution *)
       match Runner.merge_test ~overlay_repos ~opam_repo_path:opam_repo ~cache_dir ~output_dir
-              ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~dry_run with
+              ~os ~os_family ~os_distribution ~os_version ~fork_jobs with
       | Ok manifest ->
-        let (s, f, d, n, b, e) = Query.summary manifest in
+        let (s, f, d, n, _b, e) = Query.summary manifest in
         Fmt.pr "Merge test: %d overlay repos, %d packages@."
           (List.length overlay_repos) (List.length manifest.packages);
         Fmt.pr "Overlay repos (priority order):@.";
         List.iter (fun r -> Fmt.pr "  %s@." r) overlay_repos;
-        if dry_run then
-          Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
-            s f d n b e
-        else
-          Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
-            s f d n e;
+        Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
+          s f d n e;
         `Ok ()
       | Error e ->
         Fmt.epr "Error: %a@." Rresult.R.pp_msg e;
@@ -208,7 +196,7 @@ let merge_test_cmd =
   let info = Cmd.info "merge-test" ~doc in
   Cmd.v info Term.(ret (const run $ setup_log_term $ overlay_repos $ opam_repo $ cache_dir
                         $ output_dir $ fork_jobs
-                        $ os $ os_family $ os_distribution $ os_version $ dry_run $ connect_arg))
+                        $ os $ os_family $ os_distribution $ os_version $ connect_arg))
 
 (* Server subcommand *)
 let server_cmd =

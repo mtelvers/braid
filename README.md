@@ -76,7 +76,6 @@ braid merge-test <REPOS>... [OPTIONS]
 - `-o, --output PATH` - Output directory for results (default: results)
 - `--opam-repo PATH` - Path to the main opam repository (default: /home/mtelvers/opam-repository)
 - `--cache-dir PATH` - Cache directory for day10 (default: /var/cache/day10)
-- `--dry-run` - Only solve dependencies, don't actually build
 - `--os OS` - Operating system (default: linux)
 - `--os-family FAMILY` - OS family (default: debian)
 - `--os-distribution DIST` - OS distribution (default: debian)
@@ -93,18 +92,13 @@ braid merge-test /path/to/experimental /path/to/stable -o merge-results
 
 # Stack multiple overlays (first has highest priority)
 braid merge-test /path/to/repo1 /path/to/repo2 /path/to/repo3
-
-# Quick dependency check without building
-braid merge-test /path/to/overlay --dry-run
 ```
 
 **How it works:**
 
 1. Lists packages from all overlay repositories (not from opam-repository)
 2. **Stage 1:** Runs `day10 health-check --dry-run --fork N` for fast parallel dependency solving
-3. **Stage 2:** For packages that returned "solution" (solvable but not built), runs `day10 health-check` without `--dry-run` to actually build them
-
-With `--dry-run`, only stage 1 runs, showing which packages are solvable without building them.
+3. **Stage 2:** For packages with "solution" status, runs `day10 health-check` to actually build them
 
 **Querying merge-test results:**
 
@@ -424,19 +418,9 @@ url {
 }
 ```
 
-### 2. Run Initial Merge Test
+### 2. Run Merge Test
 
-Test the overlay with a quick dry-run first:
-
-```bash
-braid merge-test ~/claude-repo --dry-run -o results
-```
-
-This shows which packages are solvable without building. The output includes a "solution" count for packages that can be built.
-
-### 3. Run Full Build Test
-
-Run the actual build:
+Run the merge test:
 
 ```bash
 braid merge-test ~/claude-repo -o results
@@ -450,7 +434,7 @@ Overlay repos (priority order):
 Results: 1 success, 2 failure, 0 dep_failed, 0 no_solution, 0 error
 ```
 
-### 4. Diagnose Failures
+### 3. Diagnose Failures
 
 Check which packages failed:
 
@@ -471,7 +455,7 @@ pam_stubs.c:7:10: fatal error: security/pam_appl.h: No such file or directory
       |          ^~~~~~~~~~~~~~~~~~~~~
 ```
 
-### 5. Fix and Retest
+### 4. Fix and Retest
 
 In this case, the package needs `conf-pam` as a build dependency. Update the opam file:
 
@@ -494,7 +478,7 @@ braid merge-test ~/claude-repo -o results
 Results: 3 success, 0 failure, 0 dep_failed, 0 no_solution, 0 error
 ```
 
-### 6. Test Multiple Stacked Overlays
+### 5. Test Multiple Stacked Overlays
 
 Test what happens when merging multiple overlays together:
 
@@ -504,7 +488,7 @@ braid merge-test ~/my-overlay ~/upstream-overlay -o merge-results
 
 Overlays are listed in priority order (first = highest priority, "on top"). This tests the combined effect of merging all overlays.
 
-### 7. Query Results
+### 6. Query Results
 
 After testing, query the manifest for details:
 

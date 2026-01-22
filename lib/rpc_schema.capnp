@@ -17,7 +17,6 @@ interface BraidService {
   # Merge test on stacked repositories
   mergeTest @1 (
     repoUrls :List(Text),
-    dryRun :Bool,
     forkJobs :UInt32,
     os :Text,
     osFamily :Text,

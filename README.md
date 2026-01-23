@@ -521,7 +521,8 @@ On a machine with day10 and opam-repository:
 braid server --port 5000 \
   --public-addr build.example.com \
   --key-file /var/lib/braid/server.key \
-  --cap-file /var/lib/braid/braid.cap \
+  --cap-dir /var/lib/braid/caps \
+  --users mtelvers,avsm,samoht \
   --opam-repo /home/user/opam-repository \
   --cache-dir /var/cache/day10
 ```
@@ -530,26 +531,33 @@ braid server --port 5000 \
 - `--port PORT` - Port to listen on (required)
 - `--public-addr HOST` - Public hostname for the capability URI (required)
 - `--key-file PATH` - Path to store/load the server's secret key (default: server.key)
-- `--cap-file PATH` - Path to write the capability file (default: braid.cap)
+- `--cap-dir DIR` - Directory to write capability files (default: current directory)
+- `--users USER` - User IDs to generate capability files for (comma-separated or multiple flags, required)
 - `--opam-repo PATH` - Path to opam-repository
 - `--cache-dir PATH` - Cache directory for day10
 
 The `--key-file` option ensures the capability URI remains stable across server restarts. Without it, clients would need a new capability file each time the server restarts.
 
-### 2. Distribute the Capability File
+**Multi-user support:** The server generates a separate capability file for each user (e.g., `mtelvers.cap`, `avsm.cap`, `samoht.cap`). This allows individual users to be revoked by simply removing them from the `--users` list and restarting the server. Users can specify IDs as:
+- Comma-separated: `--users mtelvers,avsm,samoht`
+- Multiple flags: `--users mtelvers --users avsm --users samoht`
 
-Copy the capability file to any client machine:
+### 2. Distribute the Capability Files
+
+Copy each user's capability file to their client machine:
 
 ```bash
-scp build.example.com:/var/lib/braid/braid.cap ~/.config/braid.cap
+scp build.example.com:/var/lib/braid/caps/mtelvers.cap ~/.config/braid.cap
 ```
 
-The capability file contains a URI like:
+Each capability file contains a URI like:
 ```
 capnp://sha-256:abc123...@build.example.com:5000/def456...
 ```
 
-This URI encodes both the server address and a cryptographic capability token.
+This URI encodes both the server address and a cryptographic capability token unique to that user.
+
+**Revoking access:** To revoke a user's access, simply restart the server without that user in the `--users` list. Their capability file will no longer work.
 
 ### 3. Run Remote Merge Tests
 
@@ -619,12 +627,13 @@ braid log merge-q mypackage.dev -m results/manifest.json
 braid server --port 5000 \
   --public-addr basil.caelum.ci.dev \
   --key-file ~/braid-server.key \
-  --cap-file ~/braid.cap \
+  --cap-dir ~/caps \
+  --users mtelvers,avsm \
   --opam-repo ~/opam-repository \
   --cache-dir /var/cache/day10
 
-# Distribute capability (once)
-scp basil.caelum.ci.dev:~/braid.cap ~/.config/
+# Distribute capabilities (once per user)
+scp basil.caelum.ci.dev:~/caps/mtelvers.cap ~/.config/braid.cap
 
 # From any client - test an overlay
 braid merge-test https://github.com/mtelvers/claude-repo \

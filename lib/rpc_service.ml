@@ -24,18 +24,16 @@ let clone_repo ~temp_dir url =
   in
   let repo_path = Filename.concat temp_dir repo_name in
   (* GIT_TERMINAL_PROMPT=0 prevents git from prompting for credentials *)
-  (* Use shallow fetch of specific commit for minimal data transfer *)
-  let cmd_str = match commit_ref with
-    | None ->
-      (* No specific commit - shallow clone HEAD *)
-      Printf.sprintf "GIT_TERMINAL_PROMPT=0 git clone --depth 1 %s %s" base_url repo_path
-    | Some ref ->
-      (* Fetch only the specific commit with minimal data *)
-      Printf.sprintf "GIT_TERMINAL_PROMPT=0 git init %s && cd %s && git remote add origin %s && git fetch --depth 1 origin %s && git checkout FETCH_HEAD"
-        repo_path repo_path base_url ref
-  in
-  match Unix.system cmd_str with
-  | Unix.WEXITED 0 -> Ok repo_path
+  (* Use blobless clone for minimal data transfer - downloads commits/trees but not blobs until checkout *)
+  let clone_cmd = Printf.sprintf "GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none --no-checkout %s %s" base_url repo_path in
+  match Unix.system clone_cmd with
+  | Unix.WEXITED 0 ->
+    (* Checkout the specific commit or default branch *)
+    let checkout_ref = match commit_ref with Some r -> r | None -> "HEAD" in
+    let checkout_cmd = Printf.sprintf "git -C %s checkout %s" repo_path checkout_ref in
+    (match Unix.system checkout_cmd with
+     | Unix.WEXITED 0 -> Ok repo_path
+     | _ -> Error (`Msg (Printf.sprintf "Failed to checkout %s in %s" checkout_ref url)))
   | _ -> Error (`Msg (Printf.sprintf "Failed to clone %s" url))
 
 (** Create a unique temp directory using mktemp *)

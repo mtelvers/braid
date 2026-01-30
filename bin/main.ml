@@ -51,15 +51,19 @@ let run_cmd =
     let doc = "OS version" in
     Arg.(value & opt string "13" & info ["os-version"] ~docv:"VERSION" ~doc)
   in
+  let bare =
+    let doc = "Don't overlay on opam-repository (test repository standalone)" in
+    Arg.(value & flag & info ["bare"] ~doc)
+  in
 
   let run _setup repo_url cap_file output_dir num_commits
-      os os_family os_distribution os_version =
+      os os_family os_distribution os_version bare =
     Eio_main.run @@ fun env ->
       Eio.Switch.run @@ fun sw ->
         let net = Eio.Stdenv.net env in
         let manifest_json = Rpc_client.run_remote ~sw ~net ~cap_file
             ~repo_url ~num_commits
-            ~os ~os_family ~os_distribution ~os_version in
+            ~os ~os_family ~os_distribution ~os_version ~bare in
         let json = Yojson.Basic.from_string manifest_json in
         (* Check for error response *)
         match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
@@ -84,7 +88,7 @@ let run_cmd =
   let info = Cmd.info "run" ~doc in
   Cmd.v info Term.(ret (const run $ setup_log_term $ repo_url $ cap_file
                         $ output_dir $ num_commits
-                        $ os $ os_family $ os_distribution $ os_version))
+                        $ os $ os_family $ os_distribution $ os_version $ bare))
 
 (* Merge-test subcommand *)
 let merge_test_cmd =
@@ -116,15 +120,19 @@ let merge_test_cmd =
     let doc = "OS version" in
     Arg.(value & opt string "13" & info ["os-version"] ~docv:"VERSION" ~doc)
   in
+  let bare =
+    let doc = "Don't overlay on opam-repository (test repositories standalone)" in
+    Arg.(value & flag & info ["bare"] ~doc)
+  in
 
   let run _setup repo_urls cap_file output_dir
-      os os_family os_distribution os_version =
+      os os_family os_distribution os_version bare =
     Eio_main.run @@ fun env ->
       Eio.Switch.run @@ fun sw ->
         let net = Eio.Stdenv.net env in
         let manifest_json = Rpc_client.merge_test_remote ~sw ~net ~cap_file
             ~repo_urls
-            ~os ~os_family ~os_distribution ~os_version in
+            ~os ~os_family ~os_distribution ~os_version ~bare in
         let json = Yojson.Basic.from_string manifest_json in
         (* Check for error response *)
         match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
@@ -151,7 +159,7 @@ let merge_test_cmd =
   let info = Cmd.info "merge-test" ~doc in
   Cmd.v info Term.(ret (const run $ setup_log_term $ repo_urls $ cap_file
                         $ output_dir
-                        $ os $ os_family $ os_distribution $ os_version))
+                        $ os $ os_family $ os_distribution $ os_version $ bare))
 
 (* Server subcommand *)
 let server_cmd =

@@ -8,7 +8,8 @@ interface BraidService {
     os :Text,
     osFamily :Text,
     osDistribution :Text,
-    osVersion :Text
+    osVersion :Text,
+    bare :Bool
   ) -> (
     manifestJson :Text
   );
@@ -19,7 +20,8 @@ interface BraidService {
     os :Text,
     osFamily :Text,
     osDistribution :Text,
-    osVersion :Text
+    osVersion :Text,
+    bare :Bool
   ) -> (
     manifestJson :Text
   );

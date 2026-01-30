@@ -145,6 +145,7 @@ let local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
       let os_family = Params.os_family_get params in
       let os_distribution = Params.os_distribution_get params in
       let os_version = Params.os_version_get params in
+      let bare = Params.bare_get params in
 
       (* Save current working directory - Runner.run changes it *)
       let saved_cwd = get_cwd () in
@@ -161,7 +162,7 @@ let local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.run ~repo_path ~opam_repo_path ~cache_dir ~output_dir
                   ~os ~os_family ~os_distribution ~os_version
-                  ~solve_jobs ~build_jobs ~num_commits with
+                  ~solve_jobs ~build_jobs ~num_commits ~bare with
           | Ok manifest ->
             let json = Json.manifest_to_json manifest in
             Ok (Yojson.Basic.to_string json)
@@ -191,6 +192,7 @@ let local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
       let os_family = Params.os_family_get params in
       let os_distribution = Params.os_distribution_get params in
       let os_version = Params.os_version_get params in
+      let bare = Params.bare_get params in
 
       (* Save current working directory *)
       let saved_cwd = get_cwd () in
@@ -215,7 +217,7 @@ let local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
           let output_dir = Filename.concat temp_dir "results" in
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-                  ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs with
+                  ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~bare with
           | Ok manifest ->
             let json = Json.manifest_to_json manifest in
             Ok (Yojson.Basic.to_string json)

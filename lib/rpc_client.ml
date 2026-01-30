@@ -11,7 +11,7 @@ let connect ~sw ~net cap_file =
 
 (** Run health checks on a remote server *)
 let run_remote ~sw ~net ~cap_file ~repo_url ~num_commits
-    ~os ~os_family ~os_distribution ~os_version =
+    ~os ~os_family ~os_distribution ~os_version ~bare =
   let service = connect ~sw ~net cap_file in
   let open Api.Client.BraidService.Run in
   let request, params = Capnp_rpc.Capability.Request.create Params.init_pointer in
@@ -21,6 +21,7 @@ let run_remote ~sw ~net ~cap_file ~repo_url ~num_commits
   Params.os_family_set params os_family;
   Params.os_distribution_set params os_distribution;
   Params.os_version_set params os_version;
+  Params.bare_set params bare;
   let response = Capnp_rpc.Capability.call_for_value_exn service method_id request in
   let result = Results.manifest_json_get response in
   Capnp_rpc.Capability.dec_ref service;
@@ -28,7 +29,7 @@ let run_remote ~sw ~net ~cap_file ~repo_url ~num_commits
 
 (** Run merge test on a remote server *)
 let merge_test_remote ~sw ~net ~cap_file ~repo_urls
-    ~os ~os_family ~os_distribution ~os_version =
+    ~os ~os_family ~os_distribution ~os_version ~bare =
   let service = connect ~sw ~net cap_file in
   let open Api.Client.BraidService.MergeTest in
   let request, params = Capnp_rpc.Capability.Request.create Params.init_pointer in
@@ -37,6 +38,7 @@ let merge_test_remote ~sw ~net ~cap_file ~repo_urls
   Params.os_family_set params os_family;
   Params.os_distribution_set params os_distribution;
   Params.os_version_set params os_version;
+  Params.bare_set params bare;
   let response = Capnp_rpc.Capability.call_for_value_exn service method_id request in
   let result = Results.manifest_json_get response in
   Capnp_rpc.Capability.dec_ref service;

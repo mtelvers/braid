@@ -72,7 +72,7 @@ let parse_results results_dir =
   Ok results
 
 (** Run day10 health-check with two-stage approach (solve then build) *)
-let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~output_dir ~packages =
+let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~output_dir ~packages ~bare =
   (* Create packages JSON file *)
   let packages_file = Filename.concat output_dir "packages.json" in
   let packages_json = Printf.sprintf {|{"packages":[%s]}|}
@@ -83,11 +83,17 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
   let results_dir = Filename.concat output_dir "results" in
   let* _ = Bos.OS.Dir.create (Fpath.v results_dir) in
 
+  (* Build repo args: include opam_repo_path unless bare mode *)
+  let repo_args = if bare then
+    ["--opam-repository"; repo_path]
+  else
+    ["--opam-repository"; repo_path; "--opam-repository"; opam_repo_path]
+  in
+
   (* Stage 1: dry-run with high parallelism to solve dependencies *)
   let args_stage1 = [
     "day10"; "health-check";
-    "--opam-repository"; repo_path;
-    "--opam-repository"; opam_repo_path;
+  ] @ repo_args @ [
     "--cache-dir"; cache_dir;
     "--os"; os;
     "--os-family"; os_family;
@@ -125,8 +131,7 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
     (* Stage 2: actual builds with configurable parallelism *)
     let args_stage2 = [
       "day10"; "health-check";
-      "--opam-repository"; repo_path;
-      "--opam-repository"; opam_repo_path;
+    ] @ repo_args @ [
       "--cache-dir"; cache_dir;
       "--os"; os;
       "--os-family"; os_family;
@@ -143,7 +148,7 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
   end
 
 (** Process a single commit *)
-let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~temp_dir commit =
+let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~bare ~temp_dir commit =
   let short_commit = String.sub commit 0 7 in
   let message = get_commit_message commit in
 
@@ -162,7 +167,7 @@ let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_dist
     let* results = health_check
       ~repo_path ~opam_repo_path ~cache_dir
       ~os ~os_family ~os_distribution ~os_version
-      ~solve_jobs ~build_jobs ~output_dir ~packages
+      ~solve_jobs ~build_jobs ~output_dir ~packages ~bare
     in
 
     (* Sort results by package name *)
@@ -174,7 +179,7 @@ let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_dist
 (** Run the full analysis *)
 let run ~repo_path ~opam_repo_path ~cache_dir ~output_dir
     ~os ~os_family ~os_distribution ~os_version
-    ~solve_jobs ~build_jobs ~num_commits =
+    ~solve_jobs ~build_jobs ~num_commits ~bare =
 
   let* () = Bos.OS.Dir.set_current (Fpath.v repo_path) in
 
@@ -194,7 +199,7 @@ let run ~repo_path ~opam_repo_path ~cache_dir ~output_dir
   let results = List.filter_map (fun commit ->
     match process_commit ~repo_path ~opam_repo_path ~cache_dir
             ~os ~os_family ~os_distribution ~os_version
-            ~solve_jobs ~build_jobs ~temp_dir commit with
+            ~solve_jobs ~build_jobs ~bare ~temp_dir commit with
     | Ok result -> Some result
     | Error (`Msg e) ->
       Logs.err (fun m -> m "Error processing %s: %s" commit e);
@@ -260,7 +265,7 @@ let list_packages_multi ~repo_paths ~os ~os_family ~os_distribution ~os_version 
   Ok packages
 
 (** Run day10 health-check with multiple overlay repos (two-stage: solve then build) *)
-let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~output_dir ~packages =
+let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~output_dir ~packages ~bare =
   (* Create packages JSON file *)
   let packages_file = Filename.concat output_dir "packages.json" in
   let packages_json = Printf.sprintf {|{"packages":[%s]}|}
@@ -271,16 +276,16 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
   let results_dir = Filename.concat output_dir "results" in
   let* _ = Bos.OS.Dir.create (Fpath.v results_dir) in
 
-  (* Build repo args: overlay repos first (highest priority), then opam-repository *)
+  (* Build repo args: overlay repos, optionally followed by opam-repository *)
   let repo_args = List.concat_map (fun path ->
     ["--opam-repository"; path]
   ) overlay_repos in
+  let repo_args = if bare then repo_args else repo_args @ ["--opam-repository"; opam_repo_path] in
 
   (* Stage 1: dry-run with high parallelism to solve dependencies *)
   let args_stage1 = [
     "day10"; "health-check";
   ] @ repo_args @ [
-    "--opam-repository"; opam_repo_path;
     "--cache-dir"; cache_dir;
     "--os"; os;
     "--os-family"; os_family;
@@ -319,7 +324,6 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
     let args_stage2 = [
       "day10"; "health-check";
     ] @ repo_args @ [
-      "--opam-repository"; opam_repo_path;
       "--cache-dir"; cache_dir;
       "--os"; os;
       "--os-family"; os_family;
@@ -337,7 +341,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
 
 (** Run merge test on stacked repositories *)
 let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-    ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs =
+    ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~bare =
 
   (* List packages from overlay repos only (not opam-repository) *)
   let* packages = list_packages_multi ~repo_paths:overlay_repos ~os ~os_family ~os_distribution ~os_version in
@@ -377,7 +381,7 @@ let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
     let* results = health_check_multi
       ~overlay_repos ~opam_repo_path ~cache_dir
       ~os ~os_family ~os_distribution ~os_version
-      ~solve_jobs ~build_jobs ~output_dir ~packages
+      ~solve_jobs ~build_jobs ~output_dir ~packages ~bare
     in
 
     (* Sort results by package name *)

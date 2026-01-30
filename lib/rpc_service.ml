@@ -2,6 +2,35 @@
 
 module Api = Rpc_schema.MakeRPC(Capnp_rpc)
 
+(** Per-repository locking to prevent concurrent git operations on the same mirror *)
+module RepoLock = struct
+  (* Table mapping URL -> mutex *)
+  let locks : (string, Mutex.t) Hashtbl.t = Hashtbl.create 16
+
+  (* Mutex to protect the locks table itself *)
+  let table_mutex = Mutex.create ()
+
+  (* Get or create a mutex for a given URL *)
+  let get_mutex url =
+    Mutex.lock table_mutex;
+    let mutex =
+      match Hashtbl.find_opt locks url with
+      | Some m -> m
+      | None ->
+        let m = Mutex.create () in
+        Hashtbl.add locks url m;
+        m
+    in
+    Mutex.unlock table_mutex;
+    mutex
+
+  (* Execute a function while holding the lock for a URL *)
+  let with_lock url f =
+    let mutex = get_mutex url in
+    Mutex.lock mutex;
+    Fun.protect ~finally:(fun () -> Mutex.unlock mutex) f
+end
+
 (** Parse a URL with optional #fragment for commit/branch reference *)
 let parse_url_fragment url =
   match String.index_opt url '#' with
@@ -26,8 +55,8 @@ let url_to_cache_name url =
   else
     s
 
-(** Get or update a cached mirror of a repository *)
-let get_cached_mirror ~git_cache_dir base_url =
+(** Get or update a cached mirror of a repository (internal, not locked) *)
+let get_cached_mirror_unlocked ~git_cache_dir base_url =
   let cache_name = url_to_cache_name base_url in
   let mirror_path = Filename.concat git_cache_dir cache_name in
   (* Create cache directory if needed *)
@@ -45,6 +74,12 @@ let get_cached_mirror ~git_cache_dir base_url =
     | Unix.WEXITED 0 -> Ok mirror_path
     | _ -> Error (`Msg (Printf.sprintf "Failed to clone mirror of %s" base_url))
   end
+
+(** Get or update a cached mirror of a repository (with per-URL locking) *)
+let get_cached_mirror ~git_cache_dir base_url =
+  RepoLock.with_lock base_url (fun () ->
+    get_cached_mirror_unlocked ~git_cache_dir base_url
+  )
 
 (** Create a worktree from cached mirror for a specific commit *)
 let create_worktree ~mirror_path ~worktree_path ~commit_ref =

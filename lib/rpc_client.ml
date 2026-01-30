@@ -5,8 +5,9 @@ module Api = Rpc_schema.MakeRPC(Capnp_rpc)
 (** Connect to a remote BraidService using a capability file *)
 let connect ~sw ~net cap_file =
   let vat = Capnp_rpc_unix.client_only_vat ~sw net in
-  let sr = Capnp_rpc_unix.Cap_file.load vat cap_file |> Result.get_ok in
-  Capnp_rpc.Sturdy_ref.connect_exn sr
+  match Capnp_rpc_unix.Cap_file.load vat cap_file with
+  | Error (`Msg msg) -> failwith (Printf.sprintf "Failed to load capability file '%s': %s" cap_file msg)
+  | Ok sr -> Capnp_rpc.Sturdy_ref.connect_exn sr
 
 (** Run health checks on a remote server *)
 let run_remote ~sw ~net ~cap_file ~repo_url ~num_commits ~fork_jobs

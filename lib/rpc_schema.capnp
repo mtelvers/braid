@@ -5,7 +5,6 @@ interface BraidService {
   run @0 (
     repoUrl :Text,
     numCommits :UInt32,
-    forkJobs :UInt32,
     os :Text,
     osFamily :Text,
     osDistribution :Text,
@@ -17,7 +16,6 @@ interface BraidService {
   # Merge test on stacked repositories
   mergeTest @1 (
     repoUrls :List(Text),
-    forkJobs :UInt32,
     os :Text,
     osFamily :Text,
     osDistribution :Text,

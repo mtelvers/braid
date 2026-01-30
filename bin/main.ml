@@ -17,23 +17,15 @@ let manifest_file =
   let doc = "Path to manifest.json file" in
   Arg.(value & opt string "manifest.json" & info ["m"; "manifest"] ~docv:"FILE" ~doc)
 
-let connect_arg =
-  let doc = "Cap'n Proto capability file for remote execution" in
-  Arg.(value & opt (some string) None & info ["connect"] ~docv:"CAP_FILE" ~doc)
-
 (* Run subcommand *)
 let run_cmd =
-  let repo_path =
-    let doc = "Path to the overlay opam repository (or URL when using --connect)" in
-    Arg.(required & pos 0 (some string) None & info [] ~docv:"REPO" ~doc)
+  let repo_url =
+    let doc = "URL to the overlay opam repository" in
+    Arg.(required & pos 0 (some string) None & info [] ~docv:"REPO_URL" ~doc)
   in
-  let opam_repo =
-    let doc = "Path to the main opam repository" in
-    Arg.(value & opt string "/home/mtelvers/opam-repository" & info ["opam-repo"] ~docv:"PATH" ~doc)
-  in
-  let cache_dir =
-    let doc = "Cache directory for day10" in
-    Arg.(value & opt string "/var/cache/day10" & info ["cache-dir"] ~docv:"PATH" ~doc)
+  let cap_file =
+    let doc = "Cap'n Proto capability file for remote execution" in
+    Arg.(required & opt (some string) None & info ["connect"] ~docv:"CAP_FILE" ~doc)
   in
   let output_dir =
     let doc = "Output directory for results" in
@@ -43,10 +35,6 @@ let run_cmd =
     let doc = "Number of commits to process" in
     Arg.(value & opt int 10 & info ["n"; "num-commits"] ~docv:"N" ~doc)
   in
-  let fork_jobs =
-    let doc = "Number of parallel jobs for solving" in
-    Arg.(value & opt int 40 & info ["j"; "jobs"] ~docv:"N" ~doc)
-  in
   let os =
     let doc = "Operating system" in
     Arg.(value & opt string "linux" & info ["os"] ~docv:"OS" ~doc)
@@ -64,80 +52,54 @@ let run_cmd =
     Arg.(value & opt string "13" & info ["os-version"] ~docv:"VERSION" ~doc)
   in
 
-  let run _setup repo_path opam_repo cache_dir output_dir num_commits fork_jobs
-      os os_family os_distribution os_version connect =
-    match connect with
-    | Some cap_file ->
-      (* Remote execution via RPC *)
-      Eio_main.run @@ fun env ->
-        Eio.Switch.run @@ fun sw ->
-          let net = Eio.Stdenv.net env in
-          let manifest_json = Rpc_client.run_remote ~sw ~net ~cap_file
-              ~repo_url:repo_path ~num_commits ~fork_jobs
-              ~os ~os_family ~os_distribution ~os_version in
-          let json = Yojson.Basic.from_string manifest_json in
-          (* Check for error response *)
-          (match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
-          | Some err_msg ->
-            Fmt.epr "Remote error: %s@." err_msg;
-            `Error (false, "remote run failed")
-          | None ->
-            let manifest = Json.manifest_of_json json in
-            (* Write manifest to output directory *)
-            (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
-            let manifest_path = Filename.concat output_dir "manifest.json" in
-            let _ = Json.write_manifest manifest_path manifest in
-            let (s, f, d, n, b, e) = Query.summary manifest in
-            Fmt.pr "Processed %d commits, %d packages (remote)@."
-              (List.length manifest.commits) (List.length manifest.packages);
-            Fmt.pr "Latest: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
-              s f d n b e;
-            `Ok ())
-    | None ->
-      (* Local execution *)
-      match Runner.run ~repo_path ~opam_repo_path:opam_repo ~cache_dir ~output_dir
-              ~os ~os_family ~os_distribution ~os_version
-              ~fork_jobs ~num_commits with
-      | Ok manifest ->
-        let (s, f, d, n, b, e) = Query.summary manifest in
-        Fmt.pr "Processed %d commits, %d packages@."
-          (List.length manifest.commits) (List.length manifest.packages);
-        Fmt.pr "Latest: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
-          s f d n b e;
-        `Ok ()
-      | Error e ->
-        Fmt.epr "Error: %a@." Rresult.R.pp_msg e;
-        `Error (false, "run failed")
+  let run _setup repo_url cap_file output_dir num_commits
+      os os_family os_distribution os_version =
+    Eio_main.run @@ fun env ->
+      Eio.Switch.run @@ fun sw ->
+        let net = Eio.Stdenv.net env in
+        let manifest_json = Rpc_client.run_remote ~sw ~net ~cap_file
+            ~repo_url ~num_commits
+            ~os ~os_family ~os_distribution ~os_version in
+        let json = Yojson.Basic.from_string manifest_json in
+        (* Check for error response *)
+        match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
+        | Some err_msg ->
+          Fmt.epr "Remote error: %s@." err_msg;
+          `Error (false, "remote run failed")
+        | None ->
+          let manifest = Json.manifest_of_json json in
+          (* Write manifest to output directory *)
+          (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+          let manifest_path = Filename.concat output_dir "manifest.json" in
+          let _ = Json.write_manifest manifest_path manifest in
+          let (s, f, d, n, b, e) = Query.summary manifest in
+          Fmt.pr "Processed %d commits, %d packages@."
+            (List.length manifest.commits) (List.length manifest.packages);
+          Fmt.pr "Latest: %d success, %d failure, %d dep_failed, %d no_solution, %d solution, %d error@."
+            s f d n b e;
+          `Ok ()
   in
 
   let doc = "Run day10 health checks across commits" in
   let info = Cmd.info "run" ~doc in
-  Cmd.v info Term.(ret (const run $ setup_log_term $ repo_path $ opam_repo $ cache_dir
-                        $ output_dir $ num_commits $ fork_jobs
-                        $ os $ os_family $ os_distribution $ os_version $ connect_arg))
+  Cmd.v info Term.(ret (const run $ setup_log_term $ repo_url $ cap_file
+                        $ output_dir $ num_commits
+                        $ os $ os_family $ os_distribution $ os_version))
 
 (* Merge-test subcommand *)
 let merge_test_cmd =
-  let overlay_repos =
-    let doc = "Overlay repository paths (in priority order, first = highest priority). Use URLs when using --connect." in
-    Arg.(non_empty & pos_all string [] & info [] ~docv:"REPOS" ~doc)
+  let repo_urls =
+    let doc = "Overlay repository URLs (in priority order, first = highest priority)" in
+    Arg.(non_empty & pos_all string [] & info [] ~docv:"REPO_URLS" ~doc)
   in
-  let opam_repo =
-    let doc = "Path to the main opam repository" in
-    Arg.(value & opt string "/home/mtelvers/opam-repository" & info ["opam-repo"] ~docv:"PATH" ~doc)
-  in
-  let cache_dir =
-    let doc = "Cache directory for day10" in
-    Arg.(value & opt string "/var/cache/day10" & info ["cache-dir"] ~docv:"PATH" ~doc)
+  let cap_file =
+    let doc = "Cap'n Proto capability file for remote execution" in
+    Arg.(required & opt (some string) None & info ["connect"] ~docv:"CAP_FILE" ~doc)
   in
   let output_dir =
     let doc = "Output directory for results" in
     Arg.(value & opt string "results" & info ["o"; "output"] ~docv:"PATH" ~doc)
   in
-  let fork_jobs =
-    let doc = "Number of parallel jobs for solving" in
-    Arg.(value & opt int 40 & info ["j"; "jobs"] ~docv:"N" ~doc)
-  in
   let os =
     let doc = "Operating system" in
     Arg.(value & opt string "linux" & info ["os"] ~docv:"OS" ~doc)
@@ -155,60 +117,41 @@ let merge_test_cmd =
     Arg.(value & opt string "13" & info ["os-version"] ~docv:"VERSION" ~doc)
   in
 
-  let run _setup overlay_repos opam_repo cache_dir output_dir fork_jobs
-      os os_family os_distribution os_version connect =
-    match connect with
-    | Some cap_file ->
-      (* Remote execution via RPC *)
-      Eio_main.run @@ fun env ->
-        Eio.Switch.run @@ fun sw ->
-          let net = Eio.Stdenv.net env in
-          let manifest_json = Rpc_client.merge_test_remote ~sw ~net ~cap_file
-              ~repo_urls:overlay_repos ~fork_jobs
-              ~os ~os_family ~os_distribution ~os_version in
-          let json = Yojson.Basic.from_string manifest_json in
-          (* Check for error response *)
-          (match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
-          | Some err_msg ->
-            Fmt.epr "Remote error: %s@." err_msg;
-            `Error (false, "remote merge-test failed")
-          | None ->
-            let manifest = Json.manifest_of_json json in
-            (* Write manifest to output directory *)
-            (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
-            let manifest_path = Filename.concat output_dir "manifest.json" in
-            let _ = Json.write_manifest manifest_path manifest in
-            let (s, f, d, n, _b, e) = Query.summary manifest in
-            Fmt.pr "Merge test: %d overlay repos, %d packages (remote)@."
-              (List.length overlay_repos) (List.length manifest.packages);
-            Fmt.pr "Overlay repos (priority order):@.";
-            List.iter (fun r -> Fmt.pr "  %s@." r) overlay_repos;
-            Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
-              s f d n e;
-            `Ok ())
-    | None ->
-      (* Local execution *)
-      match Runner.merge_test ~overlay_repos ~opam_repo_path:opam_repo ~cache_dir ~output_dir
-              ~os ~os_family ~os_distribution ~os_version ~fork_jobs with
-      | Ok manifest ->
-        let (s, f, d, n, _b, e) = Query.summary manifest in
-        Fmt.pr "Merge test: %d overlay repos, %d packages@."
-          (List.length overlay_repos) (List.length manifest.packages);
-        Fmt.pr "Overlay repos (priority order):@.";
-        List.iter (fun r -> Fmt.pr "  %s@." r) overlay_repos;
-        Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
-          s f d n e;
-        `Ok ()
-      | Error e ->
-        Fmt.epr "Error: %a@." Rresult.R.pp_msg e;
-        `Error (false, "merge-test failed")
+  let run _setup repo_urls cap_file output_dir
+      os os_family os_distribution os_version =
+    Eio_main.run @@ fun env ->
+      Eio.Switch.run @@ fun sw ->
+        let net = Eio.Stdenv.net env in
+        let manifest_json = Rpc_client.merge_test_remote ~sw ~net ~cap_file
+            ~repo_urls
+            ~os ~os_family ~os_distribution ~os_version in
+        let json = Yojson.Basic.from_string manifest_json in
+        (* Check for error response *)
+        match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
+        | Some err_msg ->
+          Fmt.epr "Remote error: %s@." err_msg;
+          `Error (false, "remote merge-test failed")
+        | None ->
+          let manifest = Json.manifest_of_json json in
+          (* Write manifest to output directory *)
+          (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
+          let manifest_path = Filename.concat output_dir "manifest.json" in
+          let _ = Json.write_manifest manifest_path manifest in
+          let (s, f, d, n, _b, e) = Query.summary manifest in
+          Fmt.pr "Merge test: %d overlay repos, %d packages@."
+            (List.length repo_urls) (List.length manifest.packages);
+          Fmt.pr "Overlay repos (priority order):@.";
+          List.iter (fun r -> Fmt.pr "  %s@." r) repo_urls;
+          Fmt.pr "Results: %d success, %d failure, %d dep_failed, %d no_solution, %d error@."
+            s f d n e;
+          `Ok ()
   in
 
   let doc = "Test cumulative effect of merging multiple overlay repositories" in
   let info = Cmd.info "merge-test" ~doc in
-  Cmd.v info Term.(ret (const run $ setup_log_term $ overlay_repos $ opam_repo $ cache_dir
-                        $ output_dir $ fork_jobs
-                        $ os $ os_family $ os_distribution $ os_version $ connect_arg))
+  Cmd.v info Term.(ret (const run $ setup_log_term $ repo_urls $ cap_file
+                        $ output_dir
+                        $ os $ os_family $ os_distribution $ os_version))
 
 (* Server subcommand *)
 let server_cmd =
@@ -244,8 +187,16 @@ let server_cmd =
     let doc = "Cache directory for day10" in
     Arg.(value & opt string "/var/cache/day10" & info ["cache-dir"] ~docv:"PATH" ~doc)
   in
+  let solve_jobs =
+    let doc = "Number of parallel jobs for dependency solving (stage 1)" in
+    Arg.(value & opt int 40 & info ["solve-jobs"] ~docv:"N" ~doc)
+  in
+  let build_jobs =
+    let doc = "Number of parallel jobs for building (stage 2)" in
+    Arg.(value & opt int 1 & info ["build-jobs"] ~docv:"N" ~doc)
+  in
 
-  let server _setup port public_addr key_file cap_dir users listen_addr opam_repo cache_dir =
+  let server _setup port public_addr key_file cap_dir users listen_addr opam_repo cache_dir solve_jobs build_jobs =
     (* Expand comma-separated user lists into individual users *)
     let users = List.concat_map (String.split_on_char ',') users
       |> List.map String.trim
@@ -261,12 +212,14 @@ let server_cmd =
         let fs = Eio.Stdenv.cwd env in
         Server.run ~sw ~net ~fs ~listen_addr ~listen_port:port ~public_addr
           ~key_file ~cap_dir ~users ~opam_repo_path:opam_repo ~cache_dir
+          ~solve_jobs ~build_jobs
   in
 
   let doc = "Start RPC server for remote braid execution" in
   let info = Cmd.info "server" ~doc in
   Cmd.v info Term.(const server $ setup_log_term $ port_arg $ public_addr_arg
-                   $ key_file_arg $ cap_dir_arg $ users_arg $ listen_addr_arg $ opam_repo $ cache_dir)
+                   $ key_file_arg $ cap_dir_arg $ users_arg $ listen_addr_arg $ opam_repo $ cache_dir
+                   $ solve_jobs $ build_jobs)
 
 (* Query: failures *)
 let failures_cmd =

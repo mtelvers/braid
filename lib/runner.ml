@@ -72,7 +72,7 @@ let parse_results results_dir =
   Ok results
 
 (** Run day10 health-check with two-stage approach (solve then build) *)
-let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~output_dir ~packages =
+let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~output_dir ~packages =
   (* Create packages JSON file *)
   let packages_file = Filename.concat output_dir "packages.json" in
   let packages_json = Printf.sprintf {|{"packages":[%s]}|}
@@ -94,7 +94,7 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
     "--os-distribution"; os_distribution;
     "--os-version"; os_version;
     "--dry-run";
-    "--fork"; string_of_int fork_jobs;
+    "--fork"; string_of_int solve_jobs;
     "--json"; results_dir;
     "@" ^ packages_file;
   ] in
@@ -122,7 +122,7 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
     in
     let* () = Bos.OS.File.write (Fpath.v packages_file2) packages_json2 in
 
-    (* Stage 2: no --dry-run, no --fork (sequential builds) *)
+    (* Stage 2: actual builds with configurable parallelism *)
     let args_stage2 = [
       "day10"; "health-check";
       "--opam-repository"; repo_path;
@@ -132,6 +132,7 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
       "--os-family"; os_family;
       "--os-distribution"; os_distribution;
       "--os-version"; os_version;
+      "--fork"; string_of_int build_jobs;
       "--json"; results_dir;
       "@" ^ packages_file2;
     ] in
@@ -142,7 +143,7 @@ let health_check ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distri
   end
 
 (** Process a single commit *)
-let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~temp_dir commit =
+let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~temp_dir commit =
   let short_commit = String.sub commit 0 7 in
   let message = get_commit_message commit in
 
@@ -161,7 +162,7 @@ let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_dist
     let* results = health_check
       ~repo_path ~opam_repo_path ~cache_dir
       ~os ~os_family ~os_distribution ~os_version
-      ~fork_jobs ~output_dir ~packages
+      ~solve_jobs ~build_jobs ~output_dir ~packages
     in
 
     (* Sort results by package name *)
@@ -173,7 +174,7 @@ let process_commit ~repo_path ~opam_repo_path ~cache_dir ~os ~os_family ~os_dist
 (** Run the full analysis *)
 let run ~repo_path ~opam_repo_path ~cache_dir ~output_dir
     ~os ~os_family ~os_distribution ~os_version
-    ~fork_jobs ~num_commits =
+    ~solve_jobs ~build_jobs ~num_commits =
 
   let* () = Bos.OS.Dir.set_current (Fpath.v repo_path) in
 
@@ -193,7 +194,7 @@ let run ~repo_path ~opam_repo_path ~cache_dir ~output_dir
   let results = List.filter_map (fun commit ->
     match process_commit ~repo_path ~opam_repo_path ~cache_dir
             ~os ~os_family ~os_distribution ~os_version
-            ~fork_jobs ~temp_dir commit with
+            ~solve_jobs ~build_jobs ~temp_dir commit with
     | Ok result -> Some result
     | Error (`Msg e) ->
       Logs.err (fun m -> m "Error processing %s: %s" commit e);
@@ -259,7 +260,7 @@ let list_packages_multi ~repo_paths ~os ~os_family ~os_distribution ~os_version 
   Ok packages
 
 (** Run day10 health-check with multiple overlay repos (two-stage: solve then build) *)
-let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~fork_jobs ~output_dir ~packages =
+let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~output_dir ~packages =
   (* Create packages JSON file *)
   let packages_file = Filename.concat output_dir "packages.json" in
   let packages_json = Printf.sprintf {|{"packages":[%s]}|}
@@ -286,7 +287,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
     "--os-distribution"; os_distribution;
     "--os-version"; os_version;
     "--dry-run";
-    "--fork"; string_of_int fork_jobs;
+    "--fork"; string_of_int solve_jobs;
     "--json"; results_dir;
     "@" ^ packages_file;
   ] in
@@ -314,7 +315,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
     in
     let* () = Bos.OS.File.write (Fpath.v packages_file2) packages_json2 in
 
-    (* Stage 2: no --dry-run, no --fork (sequential builds) *)
+    (* Stage 2: actual builds with configurable parallelism *)
     let args_stage2 = [
       "day10"; "health-check";
     ] @ repo_args @ [
@@ -324,6 +325,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
       "--os-family"; os_family;
       "--os-distribution"; os_distribution;
       "--os-version"; os_version;
+      "--fork"; string_of_int build_jobs;
       "--json"; results_dir;
       "@" ^ packages_file2;
     ] in
@@ -335,7 +337,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
 
 (** Run merge test on stacked repositories *)
 let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-    ~os ~os_family ~os_distribution ~os_version ~fork_jobs =
+    ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs =
 
   (* List packages from overlay repos only (not opam-repository) *)
   let* packages = list_packages_multi ~repo_paths:overlay_repos ~os ~os_family ~os_distribution ~os_version in
@@ -375,7 +377,7 @@ let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
     let* results = health_check_multi
       ~overlay_repos ~opam_repo_path ~cache_dir
       ~os ~os_family ~os_distribution ~os_version
-      ~fork_jobs ~output_dir ~packages
+      ~solve_jobs ~build_jobs ~output_dir ~packages
     in
 
     (* Sort results by package name *)

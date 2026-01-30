@@ -52,7 +52,7 @@ let restore_cwd cwd =
   try Unix.chdir cwd with _ -> ()
 
 (** Create the local BraidService implementation *)
-let local ~opam_repo_path ~cache_dir =
+let local ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs =
   let module Service = Api.Service.BraidService in
   Service.local @@ object
     inherit Service.service
@@ -62,7 +62,6 @@ let local ~opam_repo_path ~cache_dir =
       release_param_caps ();
       let repo_url = Params.repo_url_get params in
       let num_commits = Params.num_commits_get params |> Stdint.Uint32.to_int in
-      let fork_jobs = Params.fork_jobs_get params |> Stdint.Uint32.to_int in
       let os = Params.os_get params in
       let os_family = Params.os_family_get params in
       let os_distribution = Params.os_distribution_get params in
@@ -82,7 +81,7 @@ let local ~opam_repo_path ~cache_dir =
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.run ~repo_path ~opam_repo_path ~cache_dir ~output_dir
                   ~os ~os_family ~os_distribution ~os_version
-                  ~fork_jobs ~num_commits with
+                  ~solve_jobs ~build_jobs ~num_commits with
           | Ok manifest ->
             let json = Json.manifest_to_json manifest in
             Ok (Yojson.Basic.to_string json)
@@ -105,7 +104,6 @@ let local ~opam_repo_path ~cache_dir =
       let open Service.MergeTest in
       release_param_caps ();
       let repo_urls = Params.repo_urls_get_list params in
-      let fork_jobs = Params.fork_jobs_get params |> Stdint.Uint32.to_int in
       let os = Params.os_get params in
       let os_family = Params.os_family_get params in
       let os_distribution = Params.os_distribution_get params in
@@ -133,7 +131,7 @@ let local ~opam_repo_path ~cache_dir =
           let output_dir = Filename.concat temp_dir "results" in
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-                  ~os ~os_family ~os_distribution ~os_version ~fork_jobs with
+                  ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs with
           | Ok manifest ->
             let json = Json.manifest_to_json manifest in
             Ok (Yojson.Basic.to_string json)

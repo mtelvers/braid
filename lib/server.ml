@@ -1,8 +1,8 @@
 (** Cap'n Proto RPC server for BraidService *)
 
 (** Start the RPC server with per-user capability files *)
-let run ~sw ~net ~fs ~listen_addr ~listen_port ~public_addr ~key_file ~cap_dir ~users ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs =
-  let service = Rpc_service.local ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs in
+let run ~sw ~net ~fs ~listen_addr ~listen_port ~public_addr ~key_file ~cap_dir ~users ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
+  let service = Rpc_service.local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs in
   let addr = `TCP (listen_addr, listen_port) in
   let public_address = `TCP (public_addr, listen_port) in
   let secret_key = `File (Eio.Path.(fs / key_file)) in

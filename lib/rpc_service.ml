@@ -11,30 +11,74 @@ let parse_url_fragment url =
     let fragment = String.sub url (idx + 1) (String.length url - idx - 1) in
     (base_url, Some fragment)
 
-(** Clone a git repository to a temporary directory *)
-let clone_repo ~temp_dir url =
+(** Convert URL to a safe cache directory name *)
+let url_to_cache_name url =
+  (* Replace unsafe characters with underscores, keep it readable *)
+  let s = String.map (fun c ->
+    match c with
+    | 'a'..'z' | 'A'..'Z' | '0'..'9' | '-' | '_' | '.' -> c
+    | _ -> '_'
+  ) url in
+  (* Truncate if too long and add hash suffix for uniqueness *)
+  if String.length s > 100 then
+    let hash = Hashtbl.hash url |> Printf.sprintf "%08x" in
+    String.sub s 0 80 ^ "_" ^ hash
+  else
+    s
+
+(** Get or update a cached mirror of a repository *)
+let get_cached_mirror ~git_cache_dir base_url =
+  let cache_name = url_to_cache_name base_url in
+  let mirror_path = Filename.concat git_cache_dir cache_name in
+  (* Create cache directory if needed *)
+  let _ = Unix.system (Printf.sprintf "mkdir -p %s" git_cache_dir) in
+  if Sys.file_exists mirror_path then begin
+    (* Update existing mirror *)
+    let fetch_cmd = Printf.sprintf "GIT_TERMINAL_PROMPT=0 git -C %s fetch --all --prune 2>&1" mirror_path in
+    match Unix.system fetch_cmd with
+    | Unix.WEXITED 0 -> Ok mirror_path
+    | _ -> Error (`Msg (Printf.sprintf "Failed to fetch updates for %s" base_url))
+  end else begin
+    (* Create new mirror *)
+    let clone_cmd = Printf.sprintf "GIT_TERMINAL_PROMPT=0 git clone --mirror %s %s 2>&1" base_url mirror_path in
+    match Unix.system clone_cmd with
+    | Unix.WEXITED 0 -> Ok mirror_path
+    | _ -> Error (`Msg (Printf.sprintf "Failed to clone mirror of %s" base_url))
+  end
+
+(** Create a worktree from cached mirror for a specific commit *)
+let create_worktree ~mirror_path ~worktree_path ~commit_ref =
+  (* Ensure parent directory exists *)
+  let parent = Filename.dirname worktree_path in
+  let _ = Unix.system (Printf.sprintf "mkdir -p %s" parent) in
+  let add_cmd = Printf.sprintf "git -C %s worktree add --detach %s %s 2>&1" mirror_path worktree_path commit_ref in
+  match Unix.system add_cmd with
+  | Unix.WEXITED 0 -> Ok worktree_path
+  | _ -> Error (`Msg (Printf.sprintf "Failed to create worktree for %s" commit_ref))
+
+(** Remove a worktree *)
+let remove_worktree ~mirror_path ~worktree_path =
+  let _ = Unix.system (Printf.sprintf "git -C %s worktree remove --force %s 2>/dev/null" mirror_path worktree_path) in
+  ()
+
+(** Checkout a repository using cached mirror *)
+let checkout_repo ~git_cache_dir ~temp_dir url =
   let base_url, commit_ref = parse_url_fragment url in
-  let repo_name =
-    (* Extract repo name from URL, e.g., "https://github.com/user/repo" -> "repo" *)
-    let base = Filename.basename base_url in
-    if String.length base > 4 && String.sub base (String.length base - 4) 4 = ".git" then
-      String.sub base 0 (String.length base - 4)
-    else
-      base
-  in
-  let repo_path = Filename.concat temp_dir repo_name in
-  (* GIT_TERMINAL_PROMPT=0 prevents git from prompting for credentials *)
-  (* Use blobless clone for minimal data transfer - downloads commits/trees but not blobs until checkout *)
-  let clone_cmd = Printf.sprintf "GIT_TERMINAL_PROMPT=0 git clone --filter=blob:none --no-checkout %s %s" base_url repo_path in
-  match Unix.system clone_cmd with
-  | Unix.WEXITED 0 ->
-    (* Checkout the specific commit or default branch *)
-    let checkout_ref = match commit_ref with Some r -> r | None -> "HEAD" in
-    let checkout_cmd = Printf.sprintf "git -C %s checkout %s" repo_path checkout_ref in
-    (match Unix.system checkout_cmd with
-     | Unix.WEXITED 0 -> Ok repo_path
-     | _ -> Error (`Msg (Printf.sprintf "Failed to checkout %s in %s" checkout_ref url)))
-  | _ -> Error (`Msg (Printf.sprintf "Failed to clone %s" url))
+  let commit_ref = match commit_ref with Some r -> r | None -> "HEAD" in
+  match get_cached_mirror ~git_cache_dir base_url with
+  | Error e -> Error e
+  | Ok mirror_path ->
+    let repo_name =
+      let base = Filename.basename base_url in
+      if String.length base > 4 && String.sub base (String.length base - 4) 4 = ".git" then
+        String.sub base 0 (String.length base - 4)
+      else
+        base
+    in
+    let worktree_path = Filename.concat temp_dir repo_name in
+    match create_worktree ~mirror_path ~worktree_path ~commit_ref with
+    | Error e -> Error e
+    | Ok path -> Ok (path, mirror_path)
 
 (** Create a unique temp directory using mktemp *)
 let make_temp_dir () =
@@ -52,7 +96,7 @@ let restore_cwd cwd =
   try Unix.chdir cwd with _ -> ()
 
 (** Create the local BraidService implementation *)
-let local ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs =
+let local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
   let module Service = Api.Service.BraidService in
   Service.local @@ object
     inherit Service.service
@@ -73,10 +117,11 @@ let local ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs =
       (* Create unique temp directory for each request *)
       let temp_dir = make_temp_dir () in
 
+      let checkout_result = checkout_repo ~git_cache_dir ~temp_dir repo_url in
       let result =
-        match clone_repo ~temp_dir repo_url with
+        match checkout_result with
         | Error (`Msg msg) -> Error msg
-        | Ok repo_path ->
+        | Ok (repo_path, _mirror_path) ->
           let output_dir = Filename.concat temp_dir "results" in
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.run ~repo_path ~opam_repo_path ~cache_dir ~output_dir
@@ -91,7 +136,10 @@ let local ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs =
       (* Restore working directory before cleanup *)
       restore_cwd saved_cwd;
 
-      (* Clean up temp directory *)
+      (* Clean up worktree and temp directory *)
+      (match checkout_result with
+       | Ok (worktree_path, mirror_path) -> remove_worktree ~mirror_path ~worktree_path
+       | Error _ -> ());
       let _ = Unix.system (Printf.sprintf "rm -rf %s" temp_dir) in
 
       let response, results = Capnp_rpc.Service.Response.create Results.init_pointer in
@@ -115,19 +163,20 @@ let local ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs =
       (* Create unique temp directory for each request *)
       let temp_dir = make_temp_dir () in
 
+      (* Checkout all repos using cached mirrors *)
+      let rec checkout_all urls acc mirrors =
+        match urls with
+        | [] -> Ok (List.rev acc, List.rev mirrors)
+        | url :: rest ->
+          match checkout_repo ~git_cache_dir ~temp_dir url with
+          | Error e -> Error e
+          | Ok (path, mirror) -> checkout_all rest (path :: acc) ((path, mirror) :: mirrors)
+      in
+      let checkout_result = checkout_all repo_urls [] [] in
       let result =
-        (* Clone all repos *)
-        let rec clone_all urls acc =
-          match urls with
-          | [] -> Ok (List.rev acc)
-          | url :: rest ->
-            match clone_repo ~temp_dir url with
-            | Error e -> Error e
-            | Ok path -> clone_all rest (path :: acc)
-        in
-        match clone_all repo_urls [] with
+        match checkout_result with
         | Error (`Msg msg) -> Error msg
-        | Ok overlay_repos ->
+        | Ok (overlay_repos, _mirrors) ->
           let output_dir = Filename.concat temp_dir "results" in
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
@@ -141,7 +190,13 @@ let local ~opam_repo_path ~cache_dir ~solve_jobs ~build_jobs =
       (* Restore working directory before cleanup *)
       restore_cwd saved_cwd;
 
-      (* Clean up temp directory *)
+      (* Clean up worktrees and temp directory *)
+      (match checkout_result with
+       | Ok (_, mirrors) ->
+         List.iter (fun (worktree_path, mirror_path) ->
+           remove_worktree ~mirror_path ~worktree_path
+         ) mirrors
+       | Error _ -> ());
       let _ = Unix.system (Printf.sprintf "rm -rf %s" temp_dir) in
 
       let response, results = Capnp_rpc.Service.Response.create Results.init_pointer in

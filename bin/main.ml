@@ -187,6 +187,10 @@ let server_cmd =
     let doc = "Cache directory for day10" in
     Arg.(value & opt string "/var/cache/day10" & info ["cache-dir"] ~docv:"PATH" ~doc)
   in
+  let git_cache_dir =
+    let doc = "Cache directory for git repository mirrors" in
+    Arg.(value & opt string "/var/cache/braid/git" & info ["git-cache-dir"] ~docv:"PATH" ~doc)
+  in
   let solve_jobs =
     let doc = "Number of parallel jobs for dependency solving (stage 1)" in
     Arg.(value & opt int 40 & info ["solve-jobs"] ~docv:"N" ~doc)
@@ -196,7 +200,7 @@ let server_cmd =
     Arg.(value & opt int 1 & info ["build-jobs"] ~docv:"N" ~doc)
   in
 
-  let server _setup port public_addr key_file cap_dir users listen_addr opam_repo cache_dir solve_jobs build_jobs =
+  let server _setup port public_addr key_file cap_dir users listen_addr opam_repo cache_dir git_cache_dir solve_jobs build_jobs =
     (* Expand comma-separated user lists into individual users *)
     let users = List.concat_map (String.split_on_char ',') users
       |> List.map String.trim
@@ -212,14 +216,14 @@ let server_cmd =
         let fs = Eio.Stdenv.cwd env in
         Server.run ~sw ~net ~fs ~listen_addr ~listen_port:port ~public_addr
           ~key_file ~cap_dir ~users ~opam_repo_path:opam_repo ~cache_dir
-          ~solve_jobs ~build_jobs
+          ~git_cache_dir ~solve_jobs ~build_jobs
   in
 
   let doc = "Start RPC server for remote braid execution" in
   let info = Cmd.info "server" ~doc in
   Cmd.v info Term.(const server $ setup_log_term $ port_arg $ public_addr_arg
                    $ key_file_arg $ cap_dir_arg $ users_arg $ listen_addr_arg $ opam_repo $ cache_dir
-                   $ solve_jobs $ build_jobs)
+                   $ git_cache_dir $ solve_jobs $ build_jobs)
 
 (* Query: failures *)
 let failures_cmd =

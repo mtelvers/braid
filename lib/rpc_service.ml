@@ -2,11 +2,21 @@
 
 module Api = Rpc_schema.MakeRPC(Capnp_rpc)
 
+(** Parse a URL with optional #fragment for commit/branch reference *)
+let parse_url_fragment url =
+  match String.index_opt url '#' with
+  | None -> (url, None)
+  | Some idx ->
+    let base_url = String.sub url 0 idx in
+    let fragment = String.sub url (idx + 1) (String.length url - idx - 1) in
+    (base_url, Some fragment)
+
 (** Clone a git repository to a temporary directory *)
 let clone_repo ~temp_dir url =
+  let base_url, commit_ref = parse_url_fragment url in
   let repo_name =
     (* Extract repo name from URL, e.g., "https://github.com/user/repo" -> "repo" *)
-    let base = Filename.basename url in
+    let base = Filename.basename base_url in
     if String.length base > 4 && String.sub base (String.length base - 4) 4 = ".git" then
       String.sub base 0 (String.length base - 4)
     else
@@ -14,7 +24,16 @@ let clone_repo ~temp_dir url =
   in
   let repo_path = Filename.concat temp_dir repo_name in
   (* GIT_TERMINAL_PROMPT=0 prevents git from prompting for credentials *)
-  let cmd_str = Printf.sprintf "GIT_TERMINAL_PROMPT=0 git clone --depth 100 %s %s" url repo_path in
+  (* Use shallow fetch of specific commit for minimal data transfer *)
+  let cmd_str = match commit_ref with
+    | None ->
+      (* No specific commit - shallow clone HEAD *)
+      Printf.sprintf "GIT_TERMINAL_PROMPT=0 git clone --depth 1 %s %s" base_url repo_path
+    | Some ref ->
+      (* Fetch only the specific commit with minimal data *)
+      Printf.sprintf "GIT_TERMINAL_PROMPT=0 git init %s && cd %s && git remote add origin %s && git fetch --depth 1 origin %s && git checkout FETCH_HEAD"
+        repo_path repo_path base_url ref
+  in
   match Unix.system cmd_str with
   | Unix.WEXITED 0 -> Ok repo_path
   | _ -> Error (`Msg (Printf.sprintf "Failed to clone %s" url))

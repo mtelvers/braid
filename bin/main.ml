@@ -120,19 +120,23 @@ let merge_test_cmd =
     let doc = "OS version" in
     Arg.(value & opt string "13" & info ["os-version"] ~docv:"VERSION" ~doc)
   in
+  let ocaml_version =
+    let doc = "OCaml compiler version" in
+    Arg.(value & opt string "5.3.0" & info ["ocaml-version"] ~docv:"VERSION" ~doc)
+  in
   let bare =
     let doc = "Don't overlay on opam-repository (test repositories standalone)" in
     Arg.(value & flag & info ["bare"] ~doc)
   in
 
   let run _setup repo_urls cap_file output_dir
-      os os_family os_distribution os_version bare =
+      os os_family os_distribution os_version ocaml_version bare =
     Eio_main.run @@ fun env ->
       Eio.Switch.run @@ fun sw ->
         let net = Eio.Stdenv.net env in
         let manifest_json = Rpc_client.merge_test_remote ~sw ~net ~cap_file
             ~repo_urls
-            ~os ~os_family ~os_distribution ~os_version ~bare in
+            ~os ~os_family ~os_distribution ~os_version ~bare ~ocaml_version in
         let json = Yojson.Basic.from_string manifest_json in
         (* Check for error response *)
         match Yojson.Basic.Util.(json |> member "error" |> to_string_option) with
@@ -159,7 +163,7 @@ let merge_test_cmd =
   let info = Cmd.info "merge-test" ~doc in
   Cmd.v info Term.(ret (const run $ setup_log_term $ repo_urls $ cap_file
                         $ output_dir
-                        $ os $ os_family $ os_distribution $ os_version $ bare))
+                        $ os $ os_family $ os_distribution $ os_version $ ocaml_version $ bare))
 
 (* Server subcommand *)
 let server_cmd =

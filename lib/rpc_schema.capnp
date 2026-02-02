@@ -21,7 +21,8 @@ interface BraidService {
     osFamily :Text,
     osDistribution :Text,
     osVersion :Text,
-    bare :Bool
+    bare :Bool,
+    ocamlVersion :Text
   ) -> (
     manifestJson :Text
   );

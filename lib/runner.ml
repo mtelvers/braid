@@ -265,7 +265,7 @@ let list_packages_multi ~repo_paths ~os ~os_family ~os_distribution ~os_version 
   Ok packages
 
 (** Run day10 health-check with multiple overlay repos (two-stage: solve then build) *)
-let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~output_dir ~packages ~bare =
+let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family ~os_distribution ~os_version ~ocaml_version ~solve_jobs ~build_jobs ~output_dir ~packages ~bare =
   (* Create packages JSON file *)
   let packages_file = Filename.concat output_dir "packages.json" in
   let packages_json = Printf.sprintf {|{"packages":[%s]}|}
@@ -291,6 +291,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
     "--os-family"; os_family;
     "--os-distribution"; os_distribution;
     "--os-version"; os_version;
+    "--ocaml-version"; ocaml_version;
     "--dry-run";
     "--fork"; string_of_int solve_jobs;
     "--json"; results_dir;
@@ -329,6 +330,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
       "--os-family"; os_family;
       "--os-distribution"; os_distribution;
       "--os-version"; os_version;
+      "--ocaml-version"; ocaml_version;
       "--fork"; string_of_int build_jobs;
       "--json"; results_dir;
       "@" ^ packages_file2;
@@ -341,7 +343,7 @@ let health_check_multi ~overlay_repos ~opam_repo_path ~cache_dir ~os ~os_family 
 
 (** Run merge test on stacked repositories *)
 let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-    ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~bare =
+    ~os ~os_family ~os_distribution ~os_version ~ocaml_version ~solve_jobs ~build_jobs ~bare =
 
   (* List packages from overlay repos only (not opam-repository) *)
   let* packages = list_packages_multi ~repo_paths:overlay_repos ~os ~os_family ~os_distribution ~os_version in
@@ -380,7 +382,7 @@ let merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
     (* Run health check with all overlay repos stacked *)
     let* results = health_check_multi
       ~overlay_repos ~opam_repo_path ~cache_dir
-      ~os ~os_family ~os_distribution ~os_version
+      ~os ~os_family ~os_distribution ~os_version ~ocaml_version
       ~solve_jobs ~build_jobs ~output_dir ~packages ~bare
     in
 

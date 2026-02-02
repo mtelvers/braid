@@ -193,6 +193,9 @@ let local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
       let os_distribution = Params.os_distribution_get params in
       let os_version = Params.os_version_get params in
       let bare = Params.bare_get params in
+      let ocaml_version = Params.ocaml_version_get params in
+      (* Default to 5.3.0 if not specified *)
+      let ocaml_version = if ocaml_version = "" then "5.3.0" else ocaml_version in
 
       (* Save current working directory *)
       let saved_cwd = get_cwd () in
@@ -217,7 +220,7 @@ let local ~opam_repo_path ~cache_dir ~git_cache_dir ~solve_jobs ~build_jobs =
           let output_dir = Filename.concat temp_dir "results" in
           (try Unix.mkdir output_dir 0o755 with Unix.Unix_error (Unix.EEXIST, _, _) -> ());
           match Runner.merge_test ~overlay_repos ~opam_repo_path ~cache_dir ~output_dir
-                  ~os ~os_family ~os_distribution ~os_version ~solve_jobs ~build_jobs ~bare with
+                  ~os ~os_family ~os_distribution ~os_version ~ocaml_version ~solve_jobs ~build_jobs ~bare with
           | Ok manifest ->
             let json = Json.manifest_to_json manifest in
             Ok (Yojson.Basic.to_string json)
